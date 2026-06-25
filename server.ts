@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import admin from "firebase-admin";
+import { cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { createServer as createViteServer } from "vite";
 import { AppDatabase, Business, Customer, CustomerBusinessRelation, SubscriptionPlan, PaymentTransaction, NotificationMsg, AuditLog } from "./src/types";
@@ -353,24 +354,71 @@ try {
   console.error("Failed to parse firebase-applet-config.json:", e);
 }
 
-// Initialize Firebase Admin
-if (firebaseConfig && firebaseConfig.projectId) {
-  admin.initializeApp({
-    projectId: firebaseConfig.projectId
-  });
-  console.log(`[Firebase] Initialized Admin SDK for project: ${firebaseConfig.projectId}`);
-} else {
-  admin.initializeApp();
-  console.log("[Firebase] Initialized with default credentials");
+// Determine if we should use Firestore
+let useFirestore = true;
+
+const isExternalPlatform = !!(
+  process.env.VERCEL || 
+  process.env.RAILWAY_ENVIRONMENT || 
+  process.env.RAILWAY_STATIC_URL || 
+  process.env.HEROKU_APP_ID || 
+  process.env.RENDER || 
+  process.env.FLY_APP_NAME
+);
+
+const hasCredentialsEnv = !!(
+  process.env.FIREBASE_SERVICE_ACCOUNT || 
+  process.env.GOOGLE_APPLICATION_CREDENTIALS || 
+  (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY)
+);
+
+if (isExternalPlatform && !hasCredentialsEnv) {
+  useFirestore = false;
+  console.log("[Firebase] Running on an external platform without explicit credentials. Falling back to local db.json storage.");
 }
 
-const firestoreDb = getFirestore(firebaseConfig?.firestoreDatabaseId || undefined);
+// Initialize Firebase Admin
+if (useFirestore) {
+  try {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      const serviceAccountObj = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      admin.initializeApp({
+        credential: cert(serviceAccountObj),
+        projectId: serviceAccountObj.project_id
+      });
+      console.log(`[Firebase] Initialized Admin SDK with FIREBASE_SERVICE_ACCOUNT env var for project: ${serviceAccountObj.project_id}`);
+    } else if (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+      admin.initializeApp({
+        credential: cert({
+          projectId: process.env.FIREBASE_PROJECT_ID || firebaseConfig?.projectId,
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        })
+      });
+      console.log("[Firebase] Initialized Admin SDK with individual Firebase service account credentials.");
+    } else if (firebaseConfig && firebaseConfig.projectId) {
+      admin.initializeApp({
+        projectId: firebaseConfig.projectId
+      });
+      console.log(`[Firebase] Initialized Admin SDK for project: ${firebaseConfig.projectId}`);
+    } else {
+      admin.initializeApp();
+      console.log("[Firebase] Initialized with default credentials");
+    }
+  } catch (e) {
+    console.error("[Firebase] Failed to initialize Firebase Admin SDK. Falling back to local db.json.", e);
+    useFirestore = false;
+  }
+}
+
+const firestoreDb = useFirestore ? getFirestore(firebaseConfig?.firestoreDatabaseId || undefined) : null;
 
 // Dynamic QR Scan nonces memory cache
 const usedQRIds = new Set<string>();
 
 // Helper: Clear collection in Firestore
 async function clearCollection(collectionName: string) {
+  if (!useFirestore || !firestoreDb) return;
   const snap = await firestoreDb.collection(collectionName).get();
   const batch = firestoreDb.batch();
   snap.forEach(doc => {
@@ -407,6 +455,10 @@ function saveLocalDB(db: AppDatabase) {
 
 // Helper: Seed Firestore database if empty
 async function seedFirestoreIfEmpty() {
+  if (!useFirestore || !firestoreDb) {
+    console.log("[Firebase] Skipping Firestore seeding (running in local mode with db.json).");
+    return;
+  }
   try {
     const businessesSnap = await firestoreDb.collection("businesses").limit(1).get();
     if (businessesSnap.empty) {
@@ -458,6 +510,9 @@ async function seedFirestoreIfEmpty() {
 
 // Helper: Load full DB structured snapshot from Firestore
 async function fetchFullDBFromFirestore(): Promise<AppDatabase> {
+  if (!useFirestore || !firestoreDb) {
+    return getLocalDB();
+  }
   try {
     const [
       businessesSnap,
@@ -527,6 +582,8 @@ async function fetchFullDBFromFirestore(): Promise<AppDatabase> {
 // Helper: Save full structural delta of app ledger to Cloud Firestore
 async function saveDBToFirestore(db: AppDatabase) {
   saveLocalDB(db);
+
+  if (!useFirestore || !firestoreDb) return;
 
   try {
     // Save businesses
