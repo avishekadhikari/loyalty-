@@ -5,7 +5,6 @@ import crypto from "crypto";
 import admin from "firebase-admin";
 import { cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { createServer as createViteServer } from "vite";
 import { AppDatabase, Business, Customer, CustomerBusinessRelation, SubscriptionPlan, PaymentTransaction, NotificationMsg, AuditLog } from "./src/types";
 
 const app = express();
@@ -357,14 +356,7 @@ try {
 // Determine if we should use Firestore
 let useFirestore = true;
 
-const isExternalPlatform = !!(
-  process.env.VERCEL || 
-  process.env.RAILWAY_ENVIRONMENT || 
-  process.env.RAILWAY_STATIC_URL || 
-  process.env.HEROKU_APP_ID || 
-  process.env.RENDER || 
-  process.env.FLY_APP_NAME
-);
+const isGoogleCloud = !!process.env.K_SERVICE;
 
 const hasCredentialsEnv = !!(
   process.env.FIREBASE_SERVICE_ACCOUNT || 
@@ -372,9 +364,9 @@ const hasCredentialsEnv = !!(
   (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY)
 );
 
-if (isExternalPlatform && !hasCredentialsEnv) {
+if (!isGoogleCloud && !hasCredentialsEnv) {
   useFirestore = false;
-  console.log("[Firebase] Running on an external platform without explicit credentials. Falling back to local db.json storage.");
+  console.log("[Firebase] Running outside Google Cloud without explicit credentials. Falling back to local db.json storage.");
 }
 
 // Initialize Firebase Admin
@@ -1543,6 +1535,7 @@ app.post("/api/admin/languages", async (req, res) => {
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     // Dev with Vite middleware mode integration
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
