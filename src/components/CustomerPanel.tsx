@@ -487,89 +487,30 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
           </div>
         </div>
 
-        {/* User context switcher */}
-        <div className="bg-white/5 p-2.5 rounded-xl mt-2 border border-white/10 flex flex-col gap-1.5">
-          <div className="flex justify-between items-center">
-            <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block font-mono">Simulating Profile</label>
-            <button
-              onClick={() => {
-                setShowAddUser(!showAddUser);
-                setAddUserError("");
-              }}
-              className="text-[9px] font-extrabold text-indigo-300 hover:text-white py-0.5 px-2 rounded-md bg-indigo-500/20 border border-indigo-500/30 flex items-center gap-1 cursor-pointer transition uppercase"
-            >
-              {showAddUser ? "✕ Cancel" : "➕ Add Customer Profile"}
-            </button>
+        {/* Isolated Device Customer Profile */}
+        <div className="bg-white/5 p-3 rounded-xl mt-2 border border-white/10 space-y-2">
+          <label className="text-[10px] text-indigo-300 uppercase font-extrabold block font-mono">Active Device Card</label>
+          <div className="p-2.5 bg-slate-950/40 rounded-lg border border-white/5 text-xs text-left">
+            <p className="text-white font-extrabold text-sm">{currentCustomer?.name || "Unregistered Device"}</p>
+            <p className="text-slate-400 mt-1 font-mono text-[10px]">📞 {currentCustomer?.phone || "No phone linked"}</p>
+            <p className="text-slate-400 font-mono text-[10px]">📧 {currentCustomer?.email || "No email linked"}</p>
+            <div className="mt-2 pt-2 border-t border-white/5 flex justify-between items-center text-[9px] text-slate-500 font-mono">
+              <span>DEVICE LOCK ACTIVE</span>
+              <span className="text-emerald-400 font-bold">● SECURED</span>
+            </div>
           </div>
-
-          {showAddUser ? (
-            <form onSubmit={handleAddCustomer} className="p-2.5 bg-slate-950/85 rounded-xl border border-white/10 space-y-2 animate-fadeIn text-left">
-              <p className="text-[9.5px] font-bold text-indigo-300 uppercase tracking-widest block font-mono">Create Customer Card Profile</p>
-              
-              {addUserError && (
-                <p className="text-[9px] p-1 text-red-400 font-bold bg-red-500/10 border border-red-500/20 rounded font-mono">
-                  {addUserError}
-                </p>
-              )}
-
-              <div className="space-y-1.5 text-xs text-white">
-                <input 
-                  type="text"
-                  placeholder="Full Name (e.g. Samir Shrestha)"
-                  value={newUserName}
-                  onChange={(e) => setNewUserName(e.target.value)}
-                  required
-                  className="w-full bg-[#0c0e14] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-semibold focus:outline-none focus:border-indigo-500"
-                />
-                <input 
-                  type="text"
-                  placeholder="Phone No (e.g. 9841234567)"
-                  value={newUserPhone}
-                  onChange={(e) => setNewUserPhone(e.target.value)}
-                  required
-                  className="w-full bg-[#0c0e14] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
-                />
-                <input 
-                  type="email"
-                  placeholder="Email Address (e.g. samir@eSewa.com)"
-                  value={newUserEmail}
-                  onChange={(e) => setNewUserEmail(e.target.value)}
-                  className="w-full bg-[#0c0e14] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-semibold focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={isAddingUser}
-                className="w-full bg-gradient-to-r from-emerald-500 to-indigo-600 text-white font-extrabold text-[10.5px] py-2 rounded-lg tracking-wider uppercase transition cursor-pointer shadow-md"
-              >
-                {isAddingUser ? "Registering profile..." : "Register & Set Active Card Profile 📱"}
-              </button>
-            </form>
-          ) : (
-            <>
-              <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none">
-                {db.customers.map(c => (
-                  <button
-                    key={c.id}
-                    id={`user-btn-${c.id}`}
-                    onClick={() => handleSwitchUser(c.id)}
-                    className={`text-[10px] px-2.5 py-1 rounded-lg font-medium whitespace-nowrap transition-all duration-150 shrink-0 cursor-pointer ${
-                      c.id === customerId 
-                        ? "bg-white/15 text-white shadow-md font-bold border border-white/20" 
-                        : "bg-white/5 text-slate-400 hover:text-white border border-transparent"
-                    }`}
-                  >
-                    {c.name} {c.phone.startsWith("98") ? "🇳🇵" : "🌐"}
-                  </button>
-                ))}
-              </div>
-              <div className="text-[11px] text-slate-350 flex justify-between items-center px-1 font-mono">
-                <span>📞 {currentCustomer?.phone}</span>
-                <span>📧 {currentCustomer?.email}</span>
-              </div>
-            </>
-          )}
+          <button
+            id="cust-btn-reset-device"
+            onClick={() => {
+              if (window.confirm("Are you sure you want to remove this loyalty card from this device? You will need to register again.")) {
+                localStorage.removeItem("device_customer_id");
+                window.location.reload();
+              }
+            }}
+            className="w-full bg-red-650/10 hover:bg-red-600/25 text-red-200 border border-red-500/15 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+          >
+            Reset Device Card 🚨
+          </button>
         </div>
       </div>
 

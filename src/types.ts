@@ -9,6 +9,7 @@ export interface SubscriptionPlan {
 export interface Business {
   id: string;
   name: string;
+  password?: string;
   logoUrl: string;
   country: string;
   city: string;

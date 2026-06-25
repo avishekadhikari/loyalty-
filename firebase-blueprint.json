@@ -1,0 +1,133 @@
+{
+  "entities": {
+    "Business": {
+      "title": "Business",
+      "description": "Merchant business registered on the platform",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "country": { "type": "string" },
+        "city": { "type": "string" },
+        "operatingCurrency": { "type": "string" },
+        "loyaltyMode": { "type": "string" },
+        "stampRewardLimit": { "type": "number" },
+        "pointRewardLimit": { "type": "number" },
+        "rewardDescription": { "type": "string" },
+        "status": { "type": "string" },
+        "languagePreference": { "type": "string" },
+        "billingCurrency": { "type": "string" },
+        "paymentGateway": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "trialEndsAt": { "type": "string", "format": "date-time" },
+        "planId": { "type": "string" },
+        "subscriptionStatus": { "type": "string" },
+        "nextBillingAt": { "type": "string", "format": "date-time" },
+        "overrideQuota": { "type": "number" },
+        "extraQuota": { "type": "number" },
+        "notificationsSentThisMonth": { "type": "number" },
+        "pointsRate": { "type": "number" },
+        "paymentRetries": { "type": "number" }
+      },
+      "required": ["id", "name", "status"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "User customer of the platform and merchants",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "email"]
+    },
+    "CustomerBusinessRelation": {
+      "title": "CustomerBusinessRelation",
+      "description": "Relationship between customer and merchant tracking points/stamps",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "stampsCount": { "type": "number" },
+        "pointsCount": { "type": "number" },
+        "lastStampAt": { "type": "string" },
+        "lastVisitAt": { "type": "string" },
+        "optInNotifications": { "type": "boolean" }
+      },
+      "required": ["id", "customerId", "businessId"]
+    },
+    "PaymentTransaction": {
+      "title": "PaymentTransaction",
+      "description": "Merchant subscription payment transactions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "status": { "type": "string" },
+        "gatewayTxnId": { "type": "string" },
+        "invoiceUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "businessId", "amount", "status"]
+    },
+    "NotificationMsg": {
+      "title": "NotificationMsg",
+      "description": "Merchant campaign or system notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "sentAt": { "type": "string", "format": "date-time" },
+        "reachedCount": { "type": "number" }
+      },
+      "required": ["id", "businessId", "title", "message", "sentAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System admin or merchant audit logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "actor": { "type": "string" },
+        "action": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actor", "action", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/businesses/{businessId}": {
+      "schema": "Business",
+      "description": "Merchant accounts"
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Customer accounts"
+    },
+    "/customer_business_relations/{relationId}": {
+      "schema": "CustomerBusinessRelation",
+      "description": "Loyalty status trackers"
+    },
+    "/payment_transactions/{txnId}": {
+      "schema": "PaymentTransaction",
+      "description": "Merchant billing records"
+    },
+    "/notifications/{notifId}": {
+      "schema": "NotificationMsg",
+      "description": "Sent push/SMS messages"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Security audit records"
+    }
+  }
+}

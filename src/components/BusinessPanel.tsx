@@ -11,9 +11,10 @@ interface BusinessPanelProps {
   onRefresh: () => void;
   businessId: string;
   setBusinessId: (id: string) => void;
+  onLogout?: () => void;
 }
 
-export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId }: BusinessPanelProps) {
+export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId, onLogout }: BusinessPanelProps) {
   const [activeTab, setActiveTab] = useState<"dashboard" | "rules" | "customers" | "broadcast" | "billing" | "analytics">("dashboard");
   
   // Registration and Profile States
@@ -318,20 +319,13 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
             </div>
           </div>
 
-          {/* Connected Merchant Switcher */}
+          {/* Connected Merchant Information */}
           <div className="bg-white/5 p-3 rounded-xl border border-white/10 space-y-2">
-            <label className="text-[10px] text-slate-450 uppercase font-extrabold block font-mono">Select Active Store</label>
-            <select
-              value={businessId}
-              onChange={(e) => { setBusinessId(e.target.value); setActiveTab("dashboard"); }}
-              className="w-full glass-input text-white outline-none text-xs font-bold p-2.5 rounded-lg border border-white/10 cursor-pointer"
-            >
-              {db.businesses.map(b => (
-                <option key={b.id} value={b.id} className="bg-slate-950 text-white">
-                  {b.name} ({b.operatingCurrency}) {b.status !== "active" ? "⚠️ SUSPENDED" : ""}
-                </option>
-              ))}
-            </select>
+            <label className="text-[10px] text-indigo-300 uppercase font-extrabold block font-mono">Active Store Profile</label>
+            <div className="p-2.5 bg-slate-950/40 rounded-lg border border-white/5 text-xs font-bold">
+              <p className="text-white truncate font-display">{activeBiz?.name || "No active business"}</p>
+              <p className="text-[10px] text-indigo-300 mt-1 font-mono">Slug ID: {businessId}</p>
+            </div>
             {activeBiz && (
               <div className="flex items-center justify-between mt-1 text-[10px] px-1 font-mono">
                 <span className="text-slate-450">Status:</span>
@@ -339,6 +333,15 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
                   {activeBiz.status.toUpperCase()}
                 </span>
               </div>
+            )}
+            {onLogout && (
+              <button
+                id="biz-btn-logout"
+                onClick={onLogout}
+                className="w-full mt-2 bg-red-600/20 hover:bg-red-600/30 text-red-200 border border-red-500/20 rounded-lg py-1.5 text-xs font-bold transition-all cursor-pointer hover:border-red-500/40 text-center"
+              >
+                Logout Store 🔒
+              </button>
             )}
           </div>
 

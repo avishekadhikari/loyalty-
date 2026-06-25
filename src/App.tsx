@@ -17,9 +17,42 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Simulation context mappings
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("aarav-sharma");
+  // Device-bound & session-bound states
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(() => localStorage.getItem("device_customer_id"));
+  const [loggedInBusinessId, setLoggedInBusinessId] = useState<string | null>(() => localStorage.getItem("logged_in_business_id"));
   const [selectedBusinessId, setSelectedBusinessId] = useState<string>("kathmandu-coffee");
+
+  // Customer Onboarding form states
+  const [custRegName, setCustRegName] = useState("");
+  const [custRegPhone, setCustRegPhone] = useState("");
+  const [custRegEmail, setCustRegEmail] = useState("");
+  const [custRegError, setCustRegError] = useState("");
+  const [isRegisteringCust, setIsRegisteringCust] = useState(false);
+
+  // Customer Card Login/Recovery states
+  const [custLoginPhone, setCustLoginPhone] = useState("");
+  const [custLoginError, setCustLoginError] = useState("");
+  const [isCustLoginView, setIsCustLoginView] = useState(false);
+
+  // Business Login form states
+  const [bizLoginId, setBizLoginId] = useState("");
+  const [bizLoginPassword, setBizLoginPassword] = useState("");
+  const [bizLoginError, setBizLoginError] = useState("");
+  const [isBizLoginView, setIsBizLoginView] = useState(true);
+
+  // Business Register form states
+  const [bizRegId, setBizRegId] = useState("");
+  const [bizRegName, setBizRegName] = useState("");
+  const [bizRegPassword, setBizRegPassword] = useState("");
+  const [bizRegCountry, setBizRegCountry] = useState("Nepal");
+  const [bizRegCity, setBizRegCity] = useState("Kathmandu");
+  const [bizRegCurrency, setBizRegCurrency] = useState("NPR");
+  const [bizRegGateway, setBizRegGateway] = useState<"esewa" | "khalti" | "stripe" | "paypal" | "razorpay">("esewa");
+  const [bizRegPlan, setBizRegPlan] = useState<"free" | "basic" | "premium" | "enterprise">("free");
+  const [bizRegLoyalty, setBizRegLoyalty] = useState<"stamp" | "point">("stamp");
+  const [bizRegReward, setBizRegReward] = useState("Free Cappuccino");
+  const [bizRegError, setBizRegError] = useState("");
+  const [isBizRegistering, setIsBizRegistering] = useState(false);
 
   // Admin access gate states
   const [isAdminAuthed, setIsAdminAuthed] = useState<boolean>(() => sessionStorage.getItem("admin_authed") === "true");
@@ -28,6 +61,170 @@ export default function App() {
 
   // Scan detection states
   const [qrScanActionStatus, setQrScanActionStatus] = useState<{ success: boolean; title: string; message: string } | null>(null);
+
+  // Customer Registration & Onboarding
+  const handleRegisterDeviceCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!custRegName.trim() || !custRegPhone.trim()) {
+      setCustRegError("Please enter your name and phone number.");
+      return;
+    }
+    setCustRegError("");
+    setIsRegisteringCust(true);
+
+    const generatedSlug = custRegName.toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]/g, "")
+      .substring(0, 16) + "-" + Math.floor(1000 + Math.random() * 9000);
+
+    try {
+      const response = await fetch("/api/customer/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: generatedSlug,
+          name: custRegName.trim(),
+          phone: custRegPhone.trim(),
+          email: custRegEmail.trim() || `${generatedSlug}@demo.com`
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        localStorage.setItem("device_customer_id", data.customer.id);
+        setSelectedCustomerId(data.customer.id);
+        setCustRegName("");
+        setCustRegPhone("");
+        setCustRegEmail("");
+        await fetchDB(true);
+
+        // Check if there is a pending scan parameter saved in sessionStorage
+        const pendingQuery = sessionStorage.getItem("pending_scan_query");
+        if (pendingQuery) {
+          sessionStorage.removeItem("pending_scan_query");
+          window.location.search = pendingQuery;
+        }
+      } else {
+        setCustRegError(data.error || "Onboarding failed. Please try again.");
+      }
+    } catch (err) {
+      setCustRegError("Server storage unreachable. Check internet connectivity.");
+    } finally {
+      setIsRegisteringCust(false);
+    }
+  };
+
+  // Customer phone-based card recovery/login
+  const handleLoginDeviceCustomer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!custLoginPhone.trim()) {
+      setCustLoginError("Please enter your phone number.");
+      return;
+    }
+    if (!db) {
+      setCustLoginError("Database not synchronized yet. Please wait a second.");
+      return;
+    }
+    const found = db.customers.find(c => c.phone.trim() === custLoginPhone.trim());
+    if (found) {
+      localStorage.setItem("device_customer_id", found.id);
+      setSelectedCustomerId(found.id);
+      setCustLoginPhone("");
+      setCustLoginError("");
+      
+      const pendingQuery = sessionStorage.getItem("pending_scan_query");
+      if (pendingQuery) {
+        sessionStorage.removeItem("pending_scan_query");
+        window.location.search = pendingQuery;
+      }
+    } else {
+      setCustLoginError("No loyalty card found with this phone number. Please sign up below.");
+    }
+  };
+
+  // Business B2B Sign In
+  const handleBizLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bizLoginId.trim() || !bizLoginPassword.trim()) {
+      setBizLoginError("Please enter both Store ID and Password.");
+      return;
+    }
+    setBizLoginError("");
+    try {
+      const res = await fetch("/api/business/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: bizLoginId.trim(), password: bizLoginPassword.trim() })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        localStorage.setItem("logged_in_business_id", data.business.id);
+        setLoggedInBusinessId(data.business.id);
+        setSelectedBusinessId(data.business.id);
+        setBizLoginId("");
+        setBizLoginPassword("");
+        await fetchDB(true);
+      } else {
+        setBizLoginError(data.error || "Authentication failed.");
+      }
+    } catch (e) {
+      setBizLoginError("Server unreachable. Check your router connection.");
+    }
+  };
+
+  // Business B2B Self-Registration
+  const handleBizRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bizRegId.trim() || !bizRegName.trim() || !bizRegPassword.trim() || !bizRegCity.trim() || !bizRegReward.trim()) {
+      setBizRegError("Please complete all mandatory store registration fields.");
+      return;
+    }
+    setBizRegError("");
+    setIsBizRegistering(true);
+
+    const sanitizedId = bizRegId.toLowerCase().trim().replace(/[^a-z0-9-_]/g, "");
+
+    const payload = {
+      id: sanitizedId,
+      name: bizRegName.trim(),
+      password: bizRegPassword.trim(),
+      country: bizRegCountry,
+      city: bizRegCity.trim(),
+      operatingCurrency: bizRegCurrency,
+      loyaltyMode: bizRegLoyalty,
+      stampRewardLimit: 10,
+      pointRewardLimit: 500,
+      rewardDescription: bizRegReward.trim(),
+      planId: bizRegPlan,
+      billingCurrency: bizRegCurrency === "NPR" ? "NPR" : "USD",
+      paymentGateway: bizRegGateway,
+    };
+
+    try {
+      const response = await fetch("/api/business/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (response.ok) {
+        localStorage.setItem("logged_in_business_id", sanitizedId);
+        setLoggedInBusinessId(sanitizedId);
+        setSelectedBusinessId(sanitizedId);
+        setBizRegId("");
+        setBizRegName("");
+        setBizRegPassword("");
+        setBizRegCity("");
+        setBizRegReward("");
+        await fetchDB(true);
+      } else {
+        setBizRegError(data.error || "Registration failed.");
+      }
+    } catch (err) {
+      setBizRegError("Server ledger unreachable.");
+    } finally {
+      setIsBizRegistering(false);
+    }
+  };
 
   // Fetch full DB summary
   const fetchDB = async (silent = false) => {
@@ -60,6 +257,8 @@ export default function App() {
 
   // Parse incoming QR Mobile Scans from URL query parameters
   useEffect(() => {
+    if (!db) return;
+
     const params = new URLSearchParams(window.location.search);
     const roleParam = params.get("role");
     const enrollParam = params.get("enroll");
@@ -70,8 +269,22 @@ export default function App() {
     }
 
     const processUrlScan = async () => {
-      // Get base customer context
-      const customerIdToUse = "aarav-sharma"; // Aarav Sharma (Nepal Showcase) as Default Customer for mobile redirects
+      // Get device-bound customer context
+      const deviceCustId = localStorage.getItem("device_customer_id");
+      
+      if (!deviceCustId && (enrollParam || claimParam)) {
+        // Save scan query to process after onboarding
+        sessionStorage.setItem("pending_scan_query", window.location.search);
+        setActiveRole("customer");
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return;
+      }
+
+      const customerIdToUse = deviceCustId || "aarav-sharma";
+      const activeCust = db.customers.find(c => c.id === customerIdToUse);
+      const customerName = activeCust?.name || "Aarav Sharma";
+      const customerEmail = activeCust?.email || "aarav.sharma@gmail.com";
+      const customerPhone = activeCust?.phone || "9861774000";
       
       if (enrollParam) {
         setIsLoading(true);
@@ -82,9 +295,9 @@ export default function App() {
             body: JSON.stringify({
               customerId: customerIdToUse,
               businessId: enrollParam,
-              customerName: "Aarav Sharma", 
-              customerEmail: "aarav.sharma@gmail.com",
-              customerPhone: "9861774000"
+              customerName, 
+              customerEmail,
+              customerPhone
             })
           });
           const data = await res.json();
@@ -119,7 +332,7 @@ export default function App() {
         const ts = params.get("ts");
         const nonce = params.get("nonce");
         const sig = params.get("sig");
-
+ 
         if (bizId && amount && points && ts && nonce && sig) {
           setIsLoading(true);
           try {
@@ -203,14 +416,14 @@ export default function App() {
         }
       }
     };
-
+ 
     // Process slightly delayed to support cold startup sync
     const timer = setTimeout(() => {
       processUrlScan();
     }, 700);
-
+ 
     return () => clearTimeout(timer);
-  }, []);
+  }, [db]);
 
   if (isLoading) {
     return (
@@ -352,23 +565,397 @@ export default function App() {
 
           {activeRole === "customer" && (
             <div className="animate-fadeIn">
-              <CustomerPanel 
-                db={db} 
-                onRefresh={() => fetchDB(true)} 
-                customerId={selectedCustomerId}
-                setCustomerId={setSelectedCustomerId}
-              />
+              {(!selectedCustomerId || !db.customers.some(c => c.id === selectedCustomerId)) ? (
+                /* Customer Onboarding & Login Recovery */
+                <div className="max-w-md mx-auto my-12 bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl space-y-6">
+                  <div className="text-center space-y-2">
+                    <div className="bg-indigo-500/20 text-indigo-400 p-4 rounded-full w-16 h-16 mx-auto flex items-center justify-center border border-indigo-500/35 animate-pulse">
+                      <CreditCard className="w-8 h-8" />
+                    </div>
+                    <h2 className="text-xl font-black text-white tracking-tight uppercase">Loyalty Card Onboarding</h2>
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      {isCustLoginView 
+                        ? "Retrieve your active device loyalty card profile using your registered phone number."
+                        : "Register your secure, device-locked loyalty card to collect stamps & spend points."
+                      }
+                    </p>
+                  </div>
+
+                  {isCustLoginView ? (
+                    /* Customer Phone Login/Recovery Form */
+                    <form onSubmit={handleLoginDeviceCustomer} className="space-y-4">
+                      {custLoginError && (
+                        <p className="text-[11px] text-red-400 font-bold bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg font-mono text-center">
+                          ⚠️ {custLoginError}
+                        </p>
+                      )}
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wide block">Registered Phone Number</label>
+                        <input 
+                          type="text"
+                          placeholder="e.g. 9841234567"
+                          value={custLoginPhone}
+                          onChange={(e) => {
+                            setCustLoginPhone(e.target.value);
+                            setCustLoginError("");
+                          }}
+                          required
+                          className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-4 py-3 text-center text-sm font-mono font-bold text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs py-3 rounded-xl tracking-wider uppercase transition cursor-pointer shadow-md"
+                      >
+                        Find & Link Card 📱
+                      </button>
+
+                      <div className="text-center">
+                        <button
+                          type="button"
+                          onClick={() => setIsCustLoginView(false)}
+                          className="text-xs text-indigo-300 hover:text-white underline font-semibold cursor-pointer"
+                        >
+                          Need a new card? Sign up here
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    /* Customer Registration Form */
+                    <form onSubmit={handleRegisterDeviceCustomer} className="space-y-4">
+                      {custRegError && (
+                        <p className="text-[11px] text-red-400 font-bold bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg font-mono text-center">
+                          ⚠️ {custRegError}
+                        </p>
+                      )}
+
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Full Name</label>
+                          <input 
+                            type="text"
+                            placeholder="e.g. Samir Shrestha"
+                            value={custRegName}
+                            onChange={(e) => {
+                              setCustRegName(e.target.value);
+                              setCustRegError("");
+                            }}
+                            required
+                            className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-semibold text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Mobile Phone No</label>
+                          <input 
+                            type="text"
+                            placeholder="e.g. 9841234567"
+                            value={custRegPhone}
+                            onChange={(e) => {
+                              setCustRegPhone(e.target.value);
+                              setCustRegError("");
+                            }}
+                            required
+                            className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-mono font-bold text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Email Address (Optional)</label>
+                          <input 
+                            type="email"
+                            placeholder="e.g. samir@gmail.com"
+                            value={custRegEmail}
+                            onChange={(e) => {
+                              setCustRegEmail(e.target.value);
+                              setCustRegError("");
+                            }}
+                            className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-semibold text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isRegisteringCust}
+                        className="w-full bg-gradient-to-r from-emerald-500 to-indigo-600 text-white font-extrabold text-xs py-3 rounded-xl tracking-wider uppercase transition cursor-pointer shadow-md"
+                      >
+                        {isRegisteringCust ? "Creating Loyalty Card..." : "Create & Save Device Card 💳"}
+                      </button>
+
+                      <div className="text-center">
+                        <button
+                          type="button"
+                          onClick={() => setIsCustLoginView(true)}
+                          className="text-xs text-indigo-300 hover:text-white underline font-semibold cursor-pointer"
+                        >
+                          Already registered? Recover your Card
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              ) : (
+                <CustomerPanel 
+                  db={db} 
+                  onRefresh={() => fetchDB(true)} 
+                  customerId={selectedCustomerId!}
+                  setCustomerId={setSelectedCustomerId}
+                />
+              )}
             </div>
           )}
 
           {activeRole === "business" && (
             <div className="animate-fadeIn">
-              <BusinessPanel 
-                db={db} 
-                onRefresh={() => fetchDB(true)} 
-                businessId={selectedBusinessId}
-                setBusinessId={setSelectedBusinessId}
-              />
+              {(!loggedInBusinessId || !db.businesses.some(b => b.id === loggedInBusinessId)) ? (
+                /* Business Merchant Login / Register Gate */
+                <div className="max-w-xl mx-auto my-8 bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl space-y-6">
+                  
+                  <div className="text-center space-y-2">
+                    <div className="bg-indigo-500/20 text-indigo-400 p-4 rounded-full w-16 h-16 mx-auto flex items-center justify-center border border-indigo-500/35">
+                      <Building2 className="w-8 h-8 animate-pulse" />
+                    </div>
+                    <h2 className="text-xl font-black text-white tracking-tight uppercase">Merchant Hub Portal</h2>
+                    <p className="text-[11px] text-slate-400 font-medium">Secure login gate for registered Nepal B2B & international loyalty networks.</p>
+                  </div>
+
+                  {/* Tab Selector */}
+                  <div className="bg-slate-950/60 p-1 rounded-xl flex border border-white/5">
+                    <button
+                      type="button"
+                      onClick={() => { setIsBizLoginView(true); setBizLoginError(""); setBizRegError(""); }}
+                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${isBizLoginView ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-white"}`}
+                    >
+                      Login to Store
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setIsBizLoginView(false); setBizLoginError(""); setBizRegError(""); }}
+                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${!isBizLoginView ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-white"}`}
+                    >
+                      Register New Store
+                    </button>
+                  </div>
+
+                  {isBizLoginView ? (
+                    /* Business Login form */
+                    <form onSubmit={handleBizLogin} className="space-y-4 text-left">
+                      {bizLoginError && (
+                        <p className="text-[11px] text-red-400 font-bold bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg font-mono">
+                          ⚠️ {bizLoginError}
+                        </p>
+                      )}
+
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Store Unique Slug ID</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. kathmandu-coffee"
+                            value={bizLoginId}
+                            onChange={(e) => setBizLoginId(e.target.value)}
+                            required
+                            className="w-full bg-[#0c0e14] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Merchant Password</label>
+                          <input
+                            type="password"
+                            placeholder="••••••••"
+                            value={bizLoginPassword}
+                            onChange={(e) => setBizLoginPassword(e.target.value)}
+                            required
+                            className="w-full bg-[#0c0e14] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs py-3 rounded-xl tracking-wider uppercase transition cursor-pointer shadow-md"
+                      >
+                        Access Merchant Panel 🔒
+                      </button>
+                    </form>
+                  ) : (
+                    /* Business self-registration form */
+                    <form onSubmit={handleBizRegister} className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left text-xs font-semibold text-white">
+                      {bizRegError && (
+                        <p className="col-span-full text-[11px] text-red-400 font-bold bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg font-mono">
+                          ⚠️ {bizRegError}
+                        </p>
+                      )}
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Unique Store ID Key (slug)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. kathmandu-coffee-house"
+                          value={bizRegId}
+                          onChange={(e) => setBizRegId(e.target.value)}
+                          required
+                          className="w-full bg-[#0c0e14] border border-white/10 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Store Name / Label</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Kathmandu Coffee House"
+                          value={bizRegName}
+                          onChange={(e) => setBizRegName(e.target.value)}
+                          required
+                          className="w-full bg-[#0c0e14] border border-white/10 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Store Password</label>
+                        <input
+                          type="password"
+                          placeholder="••••••••"
+                          value={bizRegPassword}
+                          onChange={(e) => setBizRegPassword(e.target.value)}
+                          required
+                          className="w-full bg-[#0c0e14] border border-white/10 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-405 uppercase font-extrabold block">City Location</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Lalitpur"
+                          value={bizRegCity}
+                          onChange={(e) => setBizRegCity(e.target.value)}
+                          required
+                          className="w-full bg-[#0c0e14] border border-white/10 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Country Region</label>
+                        <select
+                          value={bizRegCountry}
+                          onChange={(e) => {
+                            const c = e.target.value;
+                            setBizRegCountry(c);
+                            setBizRegCurrency(c === "Nepal" ? "NPR" : "USD");
+                            setBizRegGateway(c === "Nepal" ? "esewa" : "stripe");
+                          }}
+                          className="w-full bg-[#0c0e14] border border-white/10 rounded-xl p-2.5 text-xs text-white font-bold cursor-pointer focus:outline-none"
+                        >
+                          <option value="Nepal" className="bg-slate-950 text-white">Nepal 🇳🇵</option>
+                          <option value="United States" className="bg-slate-950 text-white">United States 🇺🇸</option>
+                          <option value="United Kingdom" className="bg-slate-950 text-white">United Kingdom 🇬🇧</option>
+                          <option value="Germany" className="bg-slate-950 text-white">Germany 🇪🇺</option>
+                          <option value="India" className="bg-slate-950 text-white">India 🇮🇳</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Operating Currency</label>
+                        <select
+                          value={bizRegCurrency}
+                          onChange={(e) => setBizRegCurrency(e.target.value)}
+                          className="w-full bg-[#0c0e14] border border-white/10 rounded-xl p-2.5 text-xs text-white font-bold cursor-pointer focus:outline-none"
+                        >
+                          <option value="NPR" className="bg-slate-950 text-white">NPR (रू)</option>
+                          <option value="USD" className="bg-slate-950 text-white">USD ($)</option>
+                          <option value="EUR" className="bg-slate-950 text-white">EUR (€)</option>
+                          <option value="GBP" className="bg-slate-950 text-white">GBP (£)</option>
+                          <option value="INR" className="bg-slate-950 text-white">INR (₹)</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Payment Gateway Gateway</label>
+                        <select
+                          value={bizRegGateway}
+                          onChange={(e) => setBizRegGateway(e.target.value as any)}
+                          className="w-full bg-[#0c0e14] border border-white/10 rounded-xl p-2.5 text-xs text-white font-bold cursor-pointer font-mono focus:outline-none"
+                        >
+                          {bizRegCountry === "Nepal" ? (
+                            <>
+                              <option value="esewa" className="bg-slate-950 text-white">eSewa Wallet</option>
+                              <option value="khalti" className="bg-slate-950 text-white">Khalti Digital SDK</option>
+                            </>
+                          ) : (
+                            <>
+                              <option value="stripe" className="bg-slate-950 text-white">Stripe Checkout / Cards</option>
+                              <option value="paypal" className="bg-slate-950 text-white">PayPal Direct</option>
+                              <option value="razorpay" className="bg-slate-950 text-white">Razorpay Checkout</option>
+                            </>
+                          )}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Loyalty Scheme Mode</label>
+                        <select
+                          value={bizRegLoyalty}
+                          onChange={(e) => setBizRegLoyalty(e.target.value as any)}
+                          className="w-full bg-[#0c0e14] border border-white/10 rounded-xl p-2.5 text-xs text-white font-bold cursor-pointer focus:outline-none"
+                        >
+                          <option value="stamp" className="bg-slate-950 text-white">Stamp Cards Mode (1 per 12h)</option>
+                          <option value="point" className="bg-slate-950 text-white">Points Mode (Spends dynamic)</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Subscription Plan Tier</label>
+                        <select
+                          value={bizRegPlan}
+                          onChange={(e) => setBizRegPlan(e.target.value as any)}
+                          className="w-full bg-[#0c0e14] border border-white/10 rounded-xl p-2.5 text-xs text-white font-bold cursor-pointer focus:outline-none"
+                        >
+                          <option value="free" className="bg-slate-950 text-white">Lifetime Free Plan</option>
+                          <option value="basic" className="bg-slate-950 text-white">Basic Plan (14-day trial)</option>
+                          <option value="premium" className="bg-slate-950 text-white">Premium Plan</option>
+                          <option value="enterprise" className="bg-slate-950 text-white">Enterprise Plan</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Free Reward Description</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Free Hot Cappuccino"
+                          value={bizRegReward}
+                          onChange={(e) => setBizRegReward(e.target.value)}
+                          required
+                          className="w-full bg-[#0c0e14] border border-white/10 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isBizRegistering}
+                        className="col-span-full w-full bg-gradient-to-r from-emerald-500 to-indigo-600 text-white font-extrabold text-xs py-3 rounded-xl tracking-wider uppercase transition cursor-pointer shadow-md mt-2"
+                      >
+                        {isBizRegistering ? "Registering Merchant Profile..." : "Register & Sign In to Store 🏢"}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              ) : (
+                <BusinessPanel 
+                  db={db} 
+                  onRefresh={() => fetchDB(true)} 
+                  businessId={loggedInBusinessId!}
+                  setBusinessId={setSelectedBusinessId}
+                  onLogout={() => {
+                    localStorage.removeItem("logged_in_business_id");
+                    setLoggedInBusinessId(null);
+                  }}
+                />
+              )}
             </div>
           )}
 

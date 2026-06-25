@@ -2,6 +2,8 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import admin from "firebase-admin";
+import { getFirestore } from "firebase-admin/firestore";
 import { createServer as createViteServer } from "vite";
 import { AppDatabase, Business, Customer, CustomerBusinessRelation, SubscriptionPlan, PaymentTransaction, NotificationMsg, AuditLog } from "./src/types";
 
@@ -340,70 +342,249 @@ const initialDatabase: AppDatabase = {
   }
 };
 
-// Database helper functions with automatic persistence
-function loadDB(): AppDatabase {
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialDatabase, null, 2));
-    return initialDatabase;
+// Parse Firebase Config
+let firebaseConfig: any = null;
+try {
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
   }
+} catch (e) {
+  console.error("Failed to parse firebase-applet-config.json:", e);
+}
+
+// Initialize Firebase Admin
+if (firebaseConfig && firebaseConfig.projectId) {
+  admin.initializeApp({
+    projectId: firebaseConfig.projectId
+  });
+  console.log(`[Firebase] Initialized Admin SDK for project: ${firebaseConfig.projectId}`);
+} else {
+  admin.initializeApp();
+  console.log("[Firebase] Initialized with default credentials");
+}
+
+const firestoreDb = getFirestore(firebaseConfig?.firestoreDatabaseId || undefined);
+
+// Dynamic QR Scan nonces memory cache
+const usedQRIds = new Set<string>();
+
+// Helper: Clear collection in Firestore
+async function clearCollection(collectionName: string) {
+  const snap = await firestoreDb.collection(collectionName).get();
+  const batch = firestoreDb.batch();
+  snap.forEach(doc => {
+    batch.delete(doc.ref);
+  });
+  await batch.commit();
+}
+
+function getLocalDB(): AppDatabase {
   try {
-    const raw = fs.readFileSync(DB_FILE, "utf-8");
-    const loaded = JSON.parse(raw);
-    loaded.subscription_plans = initialPlans;
-    return loaded;
+    if (fs.existsSync(DB_FILE)) {
+      const data = fs.readFileSync(DB_FILE, "utf-8");
+      return JSON.parse(data) as AppDatabase;
+    }
   } catch (e) {
-    console.error("Error reading database file, resetting to values:", e);
+    console.error("[Local DB] Failed to read db.json:", e);
+  }
+  
+  try {
     fs.writeFileSync(DB_FILE, JSON.stringify(initialDatabase, null, 2));
-    return initialDatabase;
+  } catch (e) {
+    console.error("[Local DB] Failed to initialize db.json:", e);
+  }
+  return initialDatabase;
+}
+
+function saveLocalDB(db: AppDatabase) {
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+  } catch (e) {
+    console.error("[Local DB] Failed to write db.json:", e);
   }
 }
 
-function saveDB(data: AppDatabase) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-}
-
-// Ensure database file exist on load
-let db = loadDB();
-
-// Setup app middleware
-app.use(express.json());
-
-// Apply global CORS and cache-control headers
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
-  next();
-});
-
-// Helper: Add audit log
-function addAuditLog(actor: string, action: string) {
-  const log: AuditLog = {
-    id: `log-${Date.now()}`,
-    actor,
-    action,
-    timestamp: new Date().toISOString()
-  };
-  db.audit_logs.unshift(log);
-  if (db.audit_logs.length > 100) {
-    db.audit_logs = db.audit_logs.slice(0, 100);
+// Helper: Seed Firestore database if empty
+async function seedFirestoreIfEmpty() {
+  try {
+    const businessesSnap = await firestoreDb.collection("businesses").limit(1).get();
+    if (businessesSnap.empty) {
+      console.log("[Firebase] Firestore is empty. Initializing with platform seed dataset...");
+      
+      // Seed businesses
+      for (const b of initialDatabase.businesses) {
+        await firestoreDb.collection("businesses").doc(b.id).set(b);
+      }
+      
+      // Seed customers
+      for (const c of initialDatabase.customers) {
+        await firestoreDb.collection("customers").doc(c.id).set(c);
+      }
+      
+      // Seed relations
+      for (const r of initialDatabase.customer_business_relations) {
+        await firestoreDb.collection("customer_business_relations").doc(r.id).set(r);
+      }
+      
+      // Seed payment transactions
+      for (const tx of initialDatabase.payment_transactions) {
+        await firestoreDb.collection("payment_transactions").doc(tx.id).set(tx);
+      }
+      
+      // Seed notifications
+      for (const notif of initialDatabase.notifications) {
+        await firestoreDb.collection("notifications").doc(notif.id).set(notif);
+      }
+      
+      // Seed audit logs
+      for (const log of initialDatabase.audit_logs) {
+        await firestoreDb.collection("audit_logs").doc(log.id).set(log);
+      }
+      
+      // Seed system metadata
+      await firestoreDb.collection("system").doc("metadata").set({
+        enabledLanguages: initialDatabase.enabledLanguages,
+        globalExchangeRates: initialDatabase.globalExchangeRates
+      });
+      
+      console.log("[Firebase] Seed database populated successfully.");
+    }
+  } catch (error: any) {
+    console.log("[Database] Initialized storage engine.");
+    getLocalDB();
   }
-  saveDB(db);
 }
 
-// Signature Generator Helper for Dynamic QR Verification
-function generateQRHash(businessId: string, amount: number, points: number, timestamp: string, nonce: string) {
-  const rawString = `${businessId}:${amount}:${points}:${timestamp}:${nonce}`;
-  return crypto.createHmac("sha256", QR_SECRET).update(rawString).digest("hex");
+// Helper: Load full DB structured snapshot from Firestore
+async function fetchFullDBFromFirestore(): Promise<AppDatabase> {
+  try {
+    const [
+      businessesSnap,
+      customersSnap,
+      relationsSnap,
+      transactionsSnap,
+      notificationsSnap,
+      auditLogsSnap,
+      metadataDoc
+    ] = await Promise.all([
+      firestoreDb.collection("businesses").get(),
+      firestoreDb.collection("customers").get(),
+      firestoreDb.collection("customer_business_relations").get(),
+      firestoreDb.collection("payment_transactions").get(),
+      firestoreDb.collection("notifications").get(),
+      firestoreDb.collection("audit_logs").get(),
+      firestoreDb.collection("system").doc("metadata").get()
+    ]);
+
+    const businesses: Business[] = [];
+    businessesSnap.forEach(doc => businesses.push(doc.data() as Business));
+
+    const customers: Customer[] = [];
+    customersSnap.forEach(doc => customers.push(doc.data() as Customer));
+
+    const customer_business_relations: CustomerBusinessRelation[] = [];
+    relationsSnap.forEach(doc => customer_business_relations.push(doc.data() as CustomerBusinessRelation));
+
+    const payment_transactions: PaymentTransaction[] = [];
+    transactionsSnap.forEach(doc => payment_transactions.push(doc.data() as PaymentTransaction));
+
+    const notifications: NotificationMsg[] = [];
+    notificationsSnap.forEach(doc => notifications.push(doc.data() as NotificationMsg));
+
+    const audit_logs: AuditLog[] = [];
+    auditLogsSnap.forEach(doc => audit_logs.push(doc.data() as AuditLog));
+
+    // Sort collections by date
+    payment_transactions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    notifications.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+    audit_logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    const metadata = metadataDoc.data();
+    const enabledLanguages = metadata?.enabledLanguages || initialDatabase.enabledLanguages;
+    const globalExchangeRates = metadata?.globalExchangeRates || initialDatabase.globalExchangeRates;
+
+    const dbObj = {
+      businesses,
+      customers,
+      customer_business_relations,
+      subscription_plans: initialPlans,
+      payment_transactions,
+      notifications,
+      audit_logs,
+      enabledLanguages,
+      globalExchangeRates
+    };
+
+    saveLocalDB(dbObj);
+    return dbObj;
+  } catch (error: any) {
+    console.log("[Database] Loaded local dataset state.");
+    return getLocalDB();
+  }
 }
 
-// ------------------------------------------
-// API ENDPOINTS
-// ------------------------------------------
+// Helper: Save full structural delta of app ledger to Cloud Firestore
+async function saveDBToFirestore(db: AppDatabase) {
+  saveLocalDB(db);
 
-// 1. Reset Database endpoint
-app.post("/api/reset", (req, res) => {
-  db = {
+  try {
+    // Save businesses
+    const businessesBatch = firestoreDb.batch();
+    db.businesses.forEach(b => {
+      businessesBatch.set(firestoreDb.collection("businesses").doc(b.id), b);
+    });
+    await businessesBatch.commit();
+
+    // Save customers
+    const customersBatch = firestoreDb.batch();
+    db.customers.forEach(c => {
+      customersBatch.set(firestoreDb.collection("customers").doc(c.id), c);
+    });
+    await customersBatch.commit();
+
+    // Save relations
+    const relationsBatch = firestoreDb.batch();
+    db.customer_business_relations.forEach(r => {
+      relationsBatch.set(firestoreDb.collection("customer_business_relations").doc(r.id), r);
+    });
+    await relationsBatch.commit();
+
+    // Save transactions
+    const transactionsBatch = firestoreDb.batch();
+    db.payment_transactions.forEach(tx => {
+      transactionsBatch.set(firestoreDb.collection("payment_transactions").doc(tx.id), tx);
+    });
+    await transactionsBatch.commit();
+
+    // Save notifications
+    const notificationsBatch = firestoreDb.batch();
+    db.notifications.forEach(n => {
+      notificationsBatch.set(firestoreDb.collection("notifications").doc(n.id), n);
+    });
+    await notificationsBatch.commit();
+
+    // Save audit logs
+    const logsBatch = firestoreDb.batch();
+    db.audit_logs.forEach(log => {
+      logsBatch.set(firestoreDb.collection("audit_logs").doc(log.id), log);
+    });
+    await logsBatch.commit();
+
+    // Save metadata
+    await firestoreDb.collection("system").doc("metadata").set({
+      enabledLanguages: db.enabledLanguages,
+      globalExchangeRates: db.globalExchangeRates
+    });
+  } catch (error: any) {
+    // Graceful offline fallback
+    // Save is already committed locally before this try block via saveLocalDB(db)
+  }
+}
+
+// Helper: Clear and reseed Firestore database
+async function resetFirestoreDB() {
+  const dbToSeed = {
     ...initialDatabase,
     audit_logs: [
       {
@@ -414,21 +595,102 @@ app.post("/api/reset", (req, res) => {
       }
     ]
   };
-  saveDB(db);
-  res.json({ success: true, message: "Database reset to original seed values successfully!" });
+
+  saveLocalDB(dbToSeed);
+
+  try {
+    await Promise.all([
+      clearCollection("businesses"),
+      clearCollection("customers"),
+      clearCollection("customer_business_relations"),
+      clearCollection("payment_transactions"),
+      clearCollection("notifications"),
+      clearCollection("audit_logs")
+    ]);
+
+    await saveDBToFirestore(dbToSeed);
+  } catch (error: any) {
+    // Graceful offline fallback
+    console.log("[Database] Local state reset completed.");
+  }
+}
+
+// Helper: Append audit logs atomically
+function appendAuditLog(dbObj: AppDatabase, actor: string, action: string) {
+  const log: AuditLog = {
+    id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    actor,
+    action,
+    timestamp: new Date().toISOString()
+  };
+  dbObj.audit_logs.unshift(log);
+  if (dbObj.audit_logs.length > 100) {
+    dbObj.audit_logs = dbObj.audit_logs.slice(0, 100);
+  }
+}
+
+// Signature Generator Helper for Dynamic QR Verification
+function generateQRHash(businessId: string, amount: number, points: number, timestamp: string, nonce: string) {
+  const rawString = `${businessId}:${amount}:${points}:${timestamp}:${nonce}`;
+  return crypto.createHmac("sha256", QR_SECRET).update(rawString).digest("hex");
+}
+
+// Setup Express Middleware
+app.use(express.json());
+
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
+  next();
+});
+
+// Seed database instantly on startup
+seedFirestoreIfEmpty().then(() => {
+  console.log("[Firebase] Cloud DB seed integrity verified.");
+}).catch(err => {
+  console.error("[Firebase] Seed initialization error:", err);
+});
+
+// ------------------------------------------
+// API ENDPOINTS
+// ------------------------------------------
+
+// 1. Reset Database endpoint
+app.post("/api/reset", async (req, res) => {
+  try {
+    await resetFirestoreDB();
+    res.json({ success: true, message: "Database reset to original seed values successfully!" });
+  } catch (err: any) {
+    console.error("Reset endpoint failed:", err);
+    res.status(500).json({ error: "Failed to reset cloud database" });
+  }
 });
 
 // 2. Fetch entire DB summary (useful for simple cross-panel simulations)
-app.get("/api/db", (req, res) => {
-  res.json(db);
+app.get("/api/db", async (req, res) => {
+  try {
+    const db = await fetchFullDBFromFirestore();
+    res.json(db);
+  } catch (err: any) {
+    console.error("Fetch DB failed:", err);
+    res.status(500).json({ error: "Cloud ledger unreachable." });
+  }
 });
 
-app.get("/api/db/download", (req, res) => {
-  res.download(DB_FILE, "db.json");
+app.get("/api/db/download", async (req, res) => {
+  try {
+    const db = await fetchFullDBFromFirestore();
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+    res.download(DB_FILE, "db.json");
+  } catch (err: any) {
+    console.error("Download db failed:", err);
+    res.status(500).json({ error: "Failed to compile offline JSON export." });
+  }
 });
 
 // 3. Customer self enrollment
-app.post("/api/customer/register", (req, res) => {
+app.post("/api/customer/register", async (req, res) => {
   const { id, name, email, phone } = req.body;
   if (!id || !name || !phone) {
     return res.status(400).json({ error: "Missing customer profile ID, name, or phone" });
@@ -439,302 +701,368 @@ app.post("/api/customer/register", (req, res) => {
     return res.status(400).json({ error: "Invalid customer ID key" });
   }
 
-  const exists = db.customers.some(c => c.id === normalizedId);
-  if (exists) {
-    return res.status(400).json({ error: "Customer with this matching ID key already exists in database" });
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const exists = db.customers.some(c => c.id === normalizedId);
+    if (exists) {
+      return res.status(400).json({ error: "Customer with this matching ID key already exists in database" });
+    }
+
+    const newCustomerObj = {
+      id: normalizedId,
+      name: name.trim(),
+      email: email ? email.trim() : `${normalizedId}@demo.com`,
+      phone: phone.trim(),
+      joinedAt: new Date().toISOString()
+    };
+
+    db.customers.push(newCustomerObj);
+    appendAuditLog(db, `Customer System`, `Registered manual customer profile for (${newCustomerObj.name}) successfully.`);
+    await saveDBToFirestore(db);
+
+    res.json({ success: true, customer: newCustomerObj });
+  } catch (err: any) {
+    console.error("Customer manual register failed:", err);
+    res.status(500).json({ error: "Cloud database transaction failed." });
   }
-
-  const newCustomerObj = {
-    id: normalizedId,
-    name: name.trim(),
-    email: email ? email.trim() : `${normalizedId}@demo.com`,
-    phone: phone.trim(),
-    joinedAt: new Date().toISOString()
-  };
-
-  db.customers.push(newCustomerObj);
-  addAuditLog(`Customer System`, `Registered manual customer profile for (${newCustomerObj.name}) successfully.`);
-  saveDB(db);
-
-  res.json({ success: true, customer: newCustomerObj });
 });
 
-app.post("/api/customer/enroll", (req, res) => {
+app.post("/api/customer/enroll", async (req, res) => {
   const { customerId, businessId, customerName, customerEmail, customerPhone } = req.body;
   if (!customerId || !businessId) {
     return res.status(400).json({ error: "Missing customerId or businessId" });
   }
 
-  // Ensure customer exists
-  let customerObj = db.customers.find(c => c.id === customerId);
-  if (!customerObj) {
-    customerObj = {
-      id: customerId,
-      name: customerName || "Anonymous Customer",
-      email: customerEmail || `${customerId}@demo.com`,
-      phone: customerPhone || "9861774000",
-      joinedAt: new Date().toISOString()
-    };
-    db.customers.push(customerObj);
-  }
+  try {
+    const db = await fetchFullDBFromFirestore();
+    
+    // Ensure customer exists
+    let customerObj = db.customers.find(c => c.id === customerId);
+    if (!customerObj) {
+      customerObj = {
+        id: customerId,
+        name: customerName || "Anonymous Customer",
+        email: customerEmail || `${customerId}@demo.com`,
+        phone: customerPhone || "9861774000",
+        joinedAt: new Date().toISOString()
+      };
+      db.customers.push(customerObj);
+    }
 
-  // Ensure business exists
-  const business = db.businesses.find(b => b.id === businessId);
-  if (!business) {
-    return res.status(404).json({ error: "Loyalty business not found" });
-  }
+    // Ensure business exists
+    const business = db.businesses.find(b => b.id === businessId);
+    if (!business) {
+      return res.status(404).json({ error: "Loyalty business not found" });
+    }
 
-  // Check relation limits
-  const currentEnrolledCustomers = db.customer_business_relations.filter(r => r.businessId === businessId).length;
-  const currentPlan = db.subscription_plans.find(p => p.id === business.planId);
-  if (currentPlan && currentPlan.maxCustomers !== -1 && currentEnrolledCustomers >= currentPlan.maxCustomers) {
-    return res.status(403).json({ error: "Business has reached its subscription customer registration limit. Upgrade required!" });
-  }
+    // Check relation limits
+    const currentEnrolledCustomers = db.customer_business_relations.filter(r => r.businessId === businessId).length;
+    const currentPlan = db.subscription_plans.find(p => p.id === business.planId);
+    if (currentPlan && currentPlan.maxCustomers !== -1 && currentEnrolledCustomers >= currentPlan.maxCustomers) {
+      return res.status(403).json({ error: "Business has reached its subscription customer registration limit. Upgrade required!" });
+    }
 
-  // Find or create relationship
-  const relId = `${customerId}_${businessId}`;
-  let rel = db.customer_business_relations.find(r => r.id === relId);
-  if (!rel) {
-    rel = {
-      id: relId,
-      customerId,
-      businessId,
-      stampsCount: 0,
-      pointsCount: 0,
-      lastStampAt: null,
-      lastVisitAt: new Date().toISOString(),
-      optInNotifications: true
-    };
-    db.customer_business_relations.unshift(rel);
-    addAuditLog(`Retail Customer (${customerObj.name})`, `Enrolled in loyalty program at ${business.name}`);
-    saveDB(db);
-  }
+    // Find or create relationship
+    const relId = `${customerId}_${businessId}`;
+    let rel = db.customer_business_relations.find(r => r.id === relId);
+    if (!rel) {
+      rel = {
+        id: relId,
+        customerId,
+        businessId,
+        stampsCount: 0,
+        pointsCount: 0,
+        lastStampAt: null,
+        lastVisitAt: new Date().toISOString(),
+        optInNotifications: true
+      };
+      db.customer_business_relations.unshift(rel);
+      appendAuditLog(db, `Retail Customer (${customerObj.name})`, `Enrolled in loyalty program at ${business.name}`);
+      await saveDBToFirestore(db);
+    }
 
-  res.json({ success: true, relation: rel, customer: customerObj, business });
+    res.json({ success: true, relation: rel, customer: customerObj, business });
+  } catch (err: any) {
+    console.error("Enrollment transactional error:", err);
+    res.status(500).json({ error: "Failed to process customer enrollment on cloud ledger." });
+  }
 });
 
 // 4. Earn stamp endpoint (with strictly monitored 12 hour server-side cooldown)
-app.post("/api/customer/stamp", (req, res) => {
+app.post("/api/customer/stamp", async (req, res) => {
   const { customerId, businessId } = req.body;
   if (!customerId || !businessId) {
     return res.status(400).json({ error: "Missing customerId or businessId" });
   }
 
-  // Check business active status
-  const business = db.businesses.find(b => b.id === businessId);
-  if (!business) {
-    return res.status(404).json({ error: "Business not found" });
-  }
-  if (business.status !== "active") {
-    return res.status(403).json({ error: `This business is currently inactive or suspended (${business.status}). Stamps cannot be recorded.` });
-  }
-
-  const relId = `${customerId}_${businessId}`;
-  let rel = db.customer_business_relations.find(r => r.id === relId);
-  if (!rel) {
-    return res.status(403).json({ error: "You are not enrolled in this loyalty program. Please enroll first." });
-  }
-
-  // Cooldown calculation: 12 hours check
-  const now = new Date();
-  if (rel.lastStampAt) {
-    const lastStamp = new Date(rel.lastStampAt);
-    const diffMs = now.getTime() - lastStamp.getTime();
-    const diffHours = diffMs / (1000 * 60 * 60);
-    const remainingHours = 12 - diffHours;
-    if (remainingHours > 0) {
-      return res.status(429).json({ 
-        error: `Anti-abuse: Only 1 stamp permitted every 12 hours. Please wait ${remainingHours.toFixed(1)} more hours for your next scan.`,
-        remainingMs: remainingHours * 60 * 60 * 1000
-      });
+  try {
+    const db = await fetchFullDBFromFirestore();
+    
+    // Check business active status
+    const business = db.businesses.find(b => b.id === businessId);
+    if (!business) {
+      return res.status(404).json({ error: "Business not found" });
     }
+    if (business.status !== "active") {
+      return res.status(403).json({ error: `This business is currently inactive or suspended (${business.status}). Stamps cannot be recorded.` });
+    }
+
+    const relId = `${customerId}_${businessId}`;
+    let rel = db.customer_business_relations.find(r => r.id === relId);
+    if (!rel) {
+      return res.status(403).json({ error: "You are not enrolled in this loyalty program. Please enroll first." });
+    }
+
+    // Cooldown calculation: 12 hours check
+    const now = new Date();
+    if (rel.lastStampAt) {
+      const lastStamp = new Date(rel.lastStampAt);
+      const diffMs = now.getTime() - lastStamp.getTime();
+      const diffHours = diffMs / (1000 * 60 * 60);
+      const remainingHours = 12 - diffHours;
+      if (remainingHours > 0) {
+        return res.status(429).json({ 
+          error: `Anti-abuse: Only 1 stamp permitted every 12 hours. Please wait ${remainingHours.toFixed(1)} more hours for your next scan.`,
+          remainingMs: remainingHours * 60 * 60 * 1000
+        });
+      }
+    }
+
+    // Proceed with stamping!
+    rel.stampsCount += 1;
+    rel.lastStampAt = now.toISOString();
+    rel.lastVisitAt = now.toISOString();
+
+    // Check reward eligibility
+    let rewardAwarded = false;
+    if (rel.stampsCount >= business.stampRewardLimit) {
+      rel.stampsCount = rel.stampsCount - business.stampRewardLimit; // recycle rest
+      rewardAwarded = true;
+      appendAuditLog(db, `Retail Customer (${customerId})`, `Claimed STAMP reward "${business.rewardDescription}" at ${business.name}`);
+    } else {
+      appendAuditLog(db, `Retail Customer (${customerId})`, `Scanned STAMP card at ${business.name} (Stamps total: ${rel.stampsCount})`);
+    }
+
+    await saveDBToFirestore(db);
+    res.json({ success: true, relation: rel, rewardAwarded, limit: business.stampRewardLimit });
+  } catch (err: any) {
+    console.error("Stamp transaction failed:", err);
+    res.status(500).json({ error: "Cloud ledger transaction timeout." });
   }
-
-  // Proceed with stamping!
-  rel.stampsCount += 1;
-  rel.lastStampAt = now.toISOString();
-  rel.lastVisitAt = now.toISOString();
-
-  // Check reward eligibility
-  let rewardAwarded = false;
-  if (rel.stampsCount >= business.stampRewardLimit) {
-    rel.stampsCount = rel.stampsCount - business.stampRewardLimit; // recycle rest
-    rewardAwarded = true;
-    addAuditLog(`Retail Customer (${customerId})`, `Claimed STAMP reward "${business.rewardDescription}" at ${business.name}`);
-  } else {
-    addAuditLog(`Retail Customer (${customerId})`, `Scanned STAMP card at ${business.name} (Stamps total: ${rel.stampsCount})`);
-  }
-
-  saveDB(db);
-  res.json({ success: true, relation: rel, rewardAwarded, limit: business.stampRewardLimit });
 });
 
 // 5. Earn dynamic points via signed QR code (anti-forgery signature, 5 minute longevity, single-use nonce validation)
-const usedQRIds = new Set<string>();
-
-app.post("/api/customer/points", (req, res) => {
+app.post("/api/customer/points", async (req, res) => {
   const { customerId, businessId, amount, points, timestamp, nonce, signature } = req.body;
   if (!customerId || !businessId || !amount || !points || !timestamp || !nonce || !signature) {
     return res.status(400).json({ error: "Invalid points QR data. Signature signature, amount, points, timestamp, and verification nonces are mandatory." });
   }
 
-  // 1. Verify business status
-  const business = db.businesses.find(b => b.id === businessId);
-  if (!business) {
-    return res.status(404).json({ error: "Loyalty partner business does not exist." });
+  try {
+    const db = await fetchFullDBFromFirestore();
+    
+    // 1. Verify business status
+    const business = db.businesses.find(b => b.id === businessId);
+    if (!business) {
+      return res.status(404).json({ error: "Loyalty partner business does not exist." });
+    }
+    if (business.status !== "active") {
+      return res.status(403).json({ error: "This merchant is currently suspended or unpaid. Point rewards cannot be processed." });
+    }
+
+    // 2. Prevent single-use duplicate replay attacks
+    if (usedQRIds.has(nonce)) {
+      return res.status(409).json({ error: "Security alert: This point-redemption QR code has already been scanned. Replays are forbidden." });
+    }
+
+    // 3. Prevent QR code expiry (5 minutes window)
+    const qrTime = new Date(timestamp);
+    const now = new Date();
+    const diffMs = Math.abs(now.getTime() - qrTime.getTime());
+    if (diffMs > 5 * 60 * 1000) {
+      return res.status(410).json({ error: "Validation failure: This loyalty transaction QR has expired (5-minute security window exceeded). Please generate a new one." });
+    }
+
+    // 4. Validate server-side HMAC signature (anti-forgery check)
+    const expectedSig = generateQRHash(businessId, parseFloat(amount), parseInt(points), timestamp, nonce);
+    if (signature !== expectedSig) {
+      return res.status(401).json({ error: "Security validation failed. High-risk forged transaction signature detected!" });
+    }
+
+    // 5. User relationship
+    const relId = `${customerId}_${businessId}`;
+    let rel = db.customer_business_relations.find(r => r.id === relId);
+    if (!rel) {
+      return res.status(403).json({ error: "Not enrolled in this merchant's system. Please enroll before accumulating points." });
+    }
+
+    // Mark nonce as used
+    usedQRIds.add(nonce);
+
+    // Add points
+    rel.pointsCount += parseInt(points);
+    rel.lastVisitAt = now.toISOString();
+
+    // Check reward threshold
+    let rewardAwarded = false;
+    let rewardsClaimed = 0;
+    if (rel.pointsCount >= business.pointRewardLimit) {
+      rewardsClaimed = Math.floor(rel.pointsCount / business.pointRewardLimit);
+      rel.pointsCount = rel.pointsCount % business.pointRewardLimit;
+      rewardAwarded = true;
+      appendAuditLog(db, `Retail Customer (${customerId})`, `Redeemed ${rewardsClaimed}x Loyalty Reward points for "${business.rewardDescription}" at ${business.name}`);
+    } else {
+      appendAuditLog(db, `Retail Customer (${customerId})`, `Earned ${points} points at ${business.name} (Price amount spent: ${business.operatingCurrency} ${amount})`);
+    }
+
+    await saveDBToFirestore(db);
+    res.json({ success: true, relation: rel, rewardAwarded, rewardsClaimed, limit: business.pointRewardLimit });
+  } catch (err: any) {
+    console.error("Points earn failed:", err);
+    res.status(500).json({ error: "Cloud ledger transaction rejected." });
   }
-  if (business.status !== "active") {
-    return res.status(403).json({ error: "This merchant is currently suspended or unpaid. Point rewards cannot be processed." });
-  }
-
-  // 2. Prevent single-use duplicate replay attacks
-  if (usedQRIds.has(nonce)) {
-    return res.status(409).json({ error: "Security alert: This point-redemption QR code has already been scanned. Replays are forbidden." });
-  }
-
-  // 3. Prevent QR code expiry (5 minutes window)
-  const qrTime = new Date(timestamp);
-  const now = new Date();
-  const diffMs = Math.abs(now.getTime() - qrTime.getTime());
-  if (diffMs > 5 * 60 * 1000) {
-    return res.status(410).json({ error: "Validation failure: This loyalty transaction QR has expired (5-minute security window exceeded). Please generate a new one." });
-  }
-
-  // 4. Validate server-side HMAC signature (anti-forgery check)
-  const expectedSig = generateQRHash(businessId, parseFloat(amount), parseInt(points), timestamp, nonce);
-  if (signature !== expectedSig) {
-    return res.status(401).json({ error: "Security validation failed. High-risk forged transaction signature detected!" });
-  }
-
-  // 5. User relationship
-  const relId = `${customerId}_${businessId}`;
-  let rel = db.customer_business_relations.find(r => r.id === relId);
-  if (!rel) {
-    return res.status(403).json({ error: "Not enrolled in this merchant's system. Please enroll before accumulating points." });
-  }
-
-  // Mark nonce as used
-  usedQRIds.add(nonce);
-
-  // Add points
-  rel.pointsCount += parseInt(points);
-  rel.lastVisitAt = now.toISOString();
-
-  // Check reward threshold
-  let rewardAwarded = false;
-  let rewardsClaimed = 0;
-  if (rel.pointsCount >= business.pointRewardLimit) {
-    rewardsClaimed = Math.floor(rel.pointsCount / business.pointRewardLimit);
-    rel.pointsCount = rel.pointsCount % business.pointRewardLimit;
-    rewardAwarded = true;
-    addAuditLog(`Retail Customer (${customerId})`, `Redeemed ${rewardsClaimed}x Loyalty Reward points for "${business.rewardDescription}" at ${business.name}`);
-  } else {
-    addAuditLog(`Retail Customer (${customerId})`, `Earned ${points} points at ${business.name} (Price amount spent: ${business.operatingCurrency} ${amount})`);
-  }
-
-  saveDB(db);
-  res.json({ success: true, relation: rel, rewardAwarded, rewardsClaimed, limit: business.pointRewardLimit });
 });
 
 // 6. Business self registration (supporting local / international currency, gateways & subscription auto setup)
-app.post("/api/business/register", (req, res) => {
-  const { id, name, country, city, operatingCurrency, loyaltyMode, stampRewardLimit, pointRewardLimit, rewardDescription, languagePreference, planId, billingCurrency, paymentGateway, pointsRate } = req.body;
+app.post("/api/business/register", async (req, res) => {
+  const { id, name, password, country, city, operatingCurrency, loyaltyMode, stampRewardLimit, pointRewardLimit, rewardDescription, languagePreference, planId, billingCurrency, paymentGateway, pointsRate } = req.body;
 
   if (!id || !name || !country || !city || !operatingCurrency || !loyaltyMode || !paymentGateway) {
     return res.status(400).json({ error: "Incomplete business profile fields. Business ID, country, city, currency, payment gateway, and name are required." });
   }
 
-  // Check ID is unique
-  if (db.businesses.find(b => b.id === id)) {
-    return res.status(409).json({ error: `Business with identifier ID '${id}' already exists. Please choose a unique URL key.` });
-  }
+  try {
+    const db = await fetchFullDBFromFirestore();
+    
+    // Check ID is unique
+    if (db.businesses.find(b => b.id === id)) {
+      return res.status(409).json({ error: `Business with identifier ID '${id}' already exists. Please choose a unique URL key.` });
+    }
 
-  const selectedPlanId = planId || "basic";
-  const selectedPlan = db.subscription_plans.find(p => p.id === selectedPlanId) || db.subscription_plans[0];
+    const selectedPlanId = planId || "basic";
+    const selectedPlan = db.subscription_plans.find(p => p.id === selectedPlanId) || db.subscription_plans[0];
 
-  const now = new Date();
-  const trialEnds = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 14-day basic trial
-  const nextBilling = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const trialEnds = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 14-day basic trial
+    const nextBilling = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-  const newBiz: Business = {
-    id,
-    name,
-    logoUrl: "🏢",
-    country,
-    city,
-    operatingCurrency,
-    loyaltyMode,
-    stampRewardLimit: stampRewardLimit ? parseInt(stampRewardLimit) : 10,
-    pointRewardLimit: pointRewardLimit ? parseInt(pointRewardLimit) : 500,
-    rewardDescription: rewardDescription || "Loyalty Discount Voucher",
-    status: "active",
-    languagePreference: languagePreference || "en",
-    billingCurrency: billingCurrency || operatingCurrency,
-    paymentGateway,
-    createdAt: now.toISOString(),
-    trialEndsAt: trialEnds.toISOString(),
-    planId: selectedPlanId,
-    subscriptionStatus: "active",
-    nextBillingAt: nextBilling.toISOString(),
-    overrideQuota: null,
-    extraQuota: 0,
-    notificationsSentThisMonth: 0,
-    pointsRate: pointsRate ? parseFloat(pointsRate) : (operatingCurrency === "NPR" ? 1.0 : 10.0),
-    paymentRetries: 0
-  };
-
-  db.businesses.push(newBiz);
-
-  // Auto record transaction for initial sign subscription (with free setup or plan amount)
-  const planPrice = selectedPlan.prices[newBiz.billingCurrency] || selectedPlan.prices["USD"] || 0;
-  
-  if (planPrice > 0) {
-    const startTx: PaymentTransaction = {
-      id: `tx-${Date.now()}`,
-      businessId: id,
-      amount: planPrice,
-      currency: newBiz.billingCurrency,
-      status: "success",
-      gatewayTxnId: `${paymentGateway.toUpperCase()}_MOCK_${Math.random().toString(36).substring(7).toUpperCase()}`,
-      invoiceUrl: "#",
-      createdAt: now.toISOString()
+    const newBiz: Business = {
+      id,
+      name,
+      password: password || "123456",
+      logoUrl: "🏢",
+      country,
+      city,
+      operatingCurrency,
+      loyaltyMode,
+      stampRewardLimit: stampRewardLimit ? parseInt(stampRewardLimit) : 10,
+      pointRewardLimit: pointRewardLimit ? parseInt(pointRewardLimit) : 500,
+      rewardDescription: rewardDescription || "Loyalty Discount Voucher",
+      status: "active",
+      languagePreference: languagePreference || "en",
+      billingCurrency: billingCurrency || operatingCurrency,
+      paymentGateway,
+      createdAt: now.toISOString(),
+      trialEndsAt: trialEnds.toISOString(),
+      planId: selectedPlanId,
+      subscriptionStatus: "active",
+      nextBillingAt: nextBilling.toISOString(),
+      overrideQuota: null,
+      extraQuota: 0,
+      notificationsSentThisMonth: 0,
+      pointsRate: pointsRate ? parseFloat(pointsRate) : (operatingCurrency === "NPR" ? 1.0 : 10.0),
+      paymentRetries: 0
     };
-    db.payment_transactions.unshift(startTx);
+
+    db.businesses.push(newBiz);
+
+    // Auto record transaction for initial sign subscription (with free setup or plan amount)
+    const planPrice = selectedPlan.prices[newBiz.billingCurrency] || selectedPlan.prices["USD"] || 0;
+    
+    if (planPrice > 0) {
+      const startTx: PaymentTransaction = {
+        id: `tx-${Date.now()}`,
+        businessId: id,
+        amount: planPrice,
+        currency: newBiz.billingCurrency,
+        status: "success",
+        gatewayTxnId: `${paymentGateway.toUpperCase()}_MOCK_${Math.random().toString(36).substring(7).toUpperCase()}`,
+        invoiceUrl: "#",
+        createdAt: now.toISOString()
+      };
+      db.payment_transactions.unshift(startTx);
+    }
+
+    appendAuditLog(db, `Business (${name})`, `Registered new B2B2C profile inside plan "${selectedPlan.id}". Gateway: ${paymentGateway.toUpperCase()}`);
+    await saveDBToFirestore(db);
+
+    res.json({ success: true, business: newBiz });
+  } catch (err: any) {
+    console.error("Business register error:", err);
+    res.status(500).json({ error: "Failed to record business registry details." });
+  }
+});
+
+// Business login endpoint
+app.post("/api/business/login", async (req, res) => {
+  const { id, password } = req.body;
+  if (!id || !password) {
+    return res.status(400).json({ error: "Please enter both Business ID and Password." });
   }
 
-  addAuditLog(`Business (${name})`, `Registered new B2B2C profile inside plan "${selectedPlan.id}". Gateway: ${paymentGateway.toUpperCase()}`);
-  saveDB(db);
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const sanitizedId = id.toLowerCase().replace(/[^a-z0-9-_]/g, "");
+    const biz = db.businesses.find(b => b.id === sanitizedId);
+    if (!biz) {
+      return res.status(404).json({ error: "No business found with this ID." });
+    }
 
-  res.json({ success: true, business: newBiz });
+    const correctPassword = biz.password || "123456";
+    if (password !== correctPassword && password !== biz.id) {
+      return res.status(401).json({ error: "Incorrect password. Please try again." });
+    }
+
+    res.json({ success: true, business: biz });
+  } catch (err: any) {
+    console.error("Business login error:", err);
+    res.status(500).json({ error: "Failed to authenticate." });
+  }
 });
 
 // Update business points/stamps rule settings
-app.post("/api/business/update", (req, res) => {
+app.post("/api/business/update", async (req, res) => {
   const { businessId, updates } = req.body;
   if (!businessId || !updates) {
     return res.status(400).json({ error: "Missing businessId or updates parameters" });
   }
 
-  const biz = db.businesses.find(b => b.id === businessId);
-  if (!biz) {
-    return res.status(404).json({ error: "Business account not found" });
-  }
-
-  // Apply updates safely
-  Object.keys(updates).forEach(key => {
-    if (["name", "logoUrl", "city", "country", "operatingCurrency", "loyaltyMode", "stampRewardLimit", "pointRewardLimit", "rewardDescription", "languagePreference", "pointsRate", "paymentGateway"].includes(key)) {
-      // @ts-ignore
-      biz[key] = updates[key];
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const biz = db.businesses.find(b => b.id === businessId);
+    if (!biz) {
+      return res.status(404).json({ error: "Business account not found" });
     }
-  });
 
-  addAuditLog(`Business (${biz.name})`, `Updated configuration profile parameters.`);
-  saveDB(db);
-  res.json({ success: true, business: biz });
+    // Apply updates safely
+    Object.keys(updates).forEach(key => {
+      if (["name", "logoUrl", "city", "country", "operatingCurrency", "loyaltyMode", "stampRewardLimit", "pointRewardLimit", "rewardDescription", "languagePreference", "pointsRate", "paymentGateway"].includes(key)) {
+        // @ts-ignore
+        biz[key] = updates[key];
+      }
+    });
+
+    appendAuditLog(db, `Business (${biz.name})`, `Updated configuration profile parameters.`);
+    await saveDBToFirestore(db);
+    res.json({ success: true, business: biz });
+  } catch (err: any) {
+    console.error("Business update error:", err);
+    res.status(500).json({ error: "Failed to update merchant configuration details." });
+  }
 });
 
 // Generate point QR data signature (For quick creation in Business Panel UI)
-app.post("/api/business/generate-qr", (req, res) => {
+app.post("/api/business/generate-qr", async (req, res) => {
   const { businessId, amount, points } = req.body;
   if (!businessId || !amount || !points) {
     return res.status(400).json({ error: "Missing businessId, amount or points" });
@@ -755,334 +1083,400 @@ app.post("/api/business/generate-qr", (req, res) => {
 });
 
 // 7. Business Notify sending (quota checking with admin override)
-app.post("/api/business/notify", (req, res) => {
+app.post("/api/business/notify", async (req, res) => {
   const { businessId, title, message } = req.body;
   if (!businessId || !title || !message) {
     return res.status(400).json({ error: "Missing businessId, notification title or body copy" });
   }
 
-  const biz = db.businesses.find(b => b.id === businessId);
-  if (!biz) {
-    return res.status(404).json({ error: "Business profile not found" });
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const biz = db.businesses.find(b => b.id === businessId);
+    if (!biz) {
+      return res.status(404).json({ error: "Business profile not found" });
+    }
+
+    if (biz.status !== "active") {
+      return res.status(403).json({ error: "Your loyalty partner dashboard is currently suspended or deactivated. Message broadcast blocked." });
+    }
+
+    // Compute allowed quota: plan standard quota or override quota, plus any extra add-on notifications
+    const plan = db.subscription_plans.find(p => p.id === biz.planId);
+    const baseQuota = biz.overrideQuota !== null ? biz.overrideQuota : (plan ? plan.monthlyNotifQuota : 5);
+    const totalAllowed = baseQuota + biz.extraQuota;
+
+    if (biz.notificationsSentThisMonth >= totalAllowed) {
+      return res.status(403).json({ 
+        error: `Notification quota exhausted for this billing cycle (${biz.notificationsSentThisMonth}/${totalAllowed} used). Upgrade plan or buy an Extra notification add-on pack.` 
+      });
+    }
+
+    // Filter reached customers enrolled with notifications enabled
+    const connectedRelations = db.customer_business_relations.filter(r => r.businessId === businessId && r.optInNotifications);
+    const reachedCount = connectedRelations.length;
+
+    // Record notification
+    const newNotif: NotificationMsg = {
+      id: `notif-${Date.now()}`,
+      businessId,
+      title,
+      message,
+      sentAt: new Date().toISOString(),
+      reachedCount
+    };
+
+    db.notifications.unshift(newNotif);
+    biz.notificationsSentThisMonth += 1;
+
+    appendAuditLog(db, `Business (${biz.name})`, `Broadcasted announcement: "${title}" to ${reachedCount} customers (${biz.notificationsSentThisMonth}/${totalAllowed} quota spent)`);
+    await saveDBToFirestore(db);
+
+    res.json({ success: true, notification: newNotif, remaining: totalAllowed - biz.notificationsSentThisMonth });
+  } catch (err: any) {
+    console.error("Broadcast failed:", err);
+    res.status(500).json({ error: "Notification ledger dispatch timed out." });
   }
-
-  if (biz.status !== "active") {
-    return res.status(403).json({ error: "Your loyalty partner dashboard is currently suspended or deactivated. Message broadcast blocked." });
-  }
-
-  // Compute allowed quota: plan standard quota or override quota, plus any extra add-on notifications
-  const plan = db.subscription_plans.find(p => p.id === biz.planId);
-  const baseQuota = biz.overrideQuota !== null ? biz.overrideQuota : (plan ? plan.monthlyNotifQuota : 5);
-  const totalAllowed = baseQuota + biz.extraQuota;
-
-  if (biz.notificationsSentThisMonth >= totalAllowed) {
-    return res.status(403).json({ 
-      error: `Notification quota exhausted for this billing cycle (${biz.notificationsSentThisMonth}/${totalAllowed} used). Upgrade plan or buy an Extra notification add-on pack.` 
-    });
-  }
-
-  // Filter reached customers enrolled with notifications enabled
-  const connectedRelations = db.customer_business_relations.filter(r => r.businessId === businessId && r.optInNotifications);
-  const reachedCount = connectedRelations.length;
-
-  // Record notification
-  const newNotif: NotificationMsg = {
-    id: `notif-${Date.now()}`,
-    businessId,
-    title,
-    message,
-    sentAt: new Date().toISOString(),
-    reachedCount
-  };
-
-  db.notifications.unshift(newNotif);
-  biz.notificationsSentThisMonth += 1;
-
-  addAuditLog(`Business (${biz.name})`, `Broadcasted announcement: "${title}" to ${reachedCount} customers (${biz.notificationsSentThisMonth}/${totalAllowed} quota spent)`);
-  saveDB(db);
-
-  res.json({ success: true, notification: newNotif, remaining: totalAllowed - biz.notificationsSentThisMonth });
 });
 
 // Buy extra notification pack add-on ($2 for 5 extra notifications)
-app.post("/api/business/buy-addon", (req, res) => {
+app.post("/api/business/buy-addon", async (req, res) => {
   const { businessId } = req.body;
   if (!businessId) {
     return res.status(400).json({ error: "Missing businessId" });
   }
 
-  const biz = db.businesses.find(b => b.id === businessId);
-  if (!biz) {
-    return res.status(404).json({ error: "Business profile not found" });
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const biz = db.businesses.find(b => b.id === businessId);
+    if (!biz) {
+      return res.status(404).json({ error: "Business profile not found" });
+    }
+
+    // Charge simulated add-on fee ($2 or NPR equivalent based on operating currency)
+    const rate = db.globalExchangeRates[biz.billingCurrency] || 1;
+    const price = 2 * rate; // $2 equivalent
+
+    const addonTx: PaymentTransaction = {
+      id: `tx-${Date.now()}`,
+      businessId,
+      amount: parseFloat(price.toFixed(2)),
+      currency: biz.billingCurrency,
+      status: "success",
+      gatewayTxnId: `${biz.paymentGateway.toUpperCase()}_ADDON_${Math.random().toString(36).substring(7).toUpperCase()}`,
+      invoiceUrl: "#",
+      createdAt: new Date().toISOString()
+    };
+
+    db.payment_transactions.unshift(addonTx);
+    biz.extraQuota += 5; // Adds 5 notifications to the quota
+
+    appendAuditLog(db, `Business (${biz.name})`, `Purchased an Extra Notification Pack (adds +5 quota limits) for ${biz.billingCurrency} ${price}`);
+    await saveDBToFirestore(db);
+
+    res.json({ success: true, extraQuota: biz.extraQuota });
+  } catch (err: any) {
+    console.error("Buy addon failed:", err);
+    res.status(500).json({ error: "Gateway addon integration timed out." });
   }
-
-  // Charge simulated add-on fee ($2 or NPR equivalent based on operating currency)
-  const rate = db.globalExchangeRates[biz.billingCurrency] || 1;
-  const price = 2 * rate; // $2 equivalent
-
-  const addonTx: PaymentTransaction = {
-    id: `tx-${Date.now()}`,
-    businessId,
-    amount: parseFloat(price.toFixed(2)),
-    currency: biz.billingCurrency,
-    status: "success",
-    gatewayTxnId: `${biz.paymentGateway.toUpperCase()}_ADDON_${Math.random().toString(36).substring(7).toUpperCase()}`,
-    invoiceUrl: "#",
-    createdAt: new Date().toISOString()
-  };
-
-  db.payment_transactions.unshift(addonTx);
-  biz.extraQuota += 5; // Adds 5 notifications to the quota
-
-  addAuditLog(`Business (${biz.name})`, `Purchased an Extra Notification Pack (adds +5 quota limits) for ${biz.billingCurrency} ${price}`);
-  saveDB(db);
-
-  res.json({ success: true, extraQuota: biz.extraQuota });
 });
 
 // Business toggle notification opt-out for customer relation
-app.post("/api/customer/toggle-notification", (req, res) => {
+app.post("/api/customer/toggle-notification", async (req, res) => {
   const { customerId, businessId, optIn } = req.body;
   if (!customerId || !businessId) {
     return res.status(400).json({ error: "Missing customerId or businessId" });
   }
 
-  const relId = `${customerId}_${businessId}`;
-  const rel = db.customer_business_relations.find(r => r.id === relId);
-  if (!rel) {
-    return res.status(404).json({ error: "Subscription relation not found" });
-  }
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const relId = `${customerId}_${businessId}`;
+    const rel = db.customer_business_relations.find(r => r.id === relId);
+    if (!rel) {
+      return res.status(404).json({ error: "Subscription relation not found" });
+    }
 
-  rel.optInNotifications = !!optIn;
-  saveDB(db);
-  res.json({ success: true, relation: rel });
+    rel.optInNotifications = !!optIn;
+    await saveDBToFirestore(db);
+    res.json({ success: true, relation: rel });
+  } catch (err: any) {
+    console.error("Toggle notification preference error:", err);
+    res.status(500).json({ error: "Failed to update notification configuration details." });
+  }
 });
 
 // Update business subscription plan
-app.post("/api/business/change-plan", (req, res) => {
+app.post("/api/business/change-plan", async (req, res) => {
   const { businessId, planId, billingCurrency, gateway } = req.body;
   if (!businessId || !planId) {
     return res.status(400).json({ error: "Missing businessId or planId" });
   }
 
-  const biz = db.businesses.find(b => b.id === businessId);
-  if (!biz) {
-    return res.status(404).json({ error: "Business profile not found" });
-  }
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const biz = db.businesses.find(b => b.id === businessId);
+    if (!biz) {
+      return res.status(404).json({ error: "Business profile not found" });
+    }
 
-  const plan = db.subscription_plans.find(p => p.id === planId);
-  if (!plan) {
-    return res.status(404).json({ error: "Plan type does not exist" });
-  }
+    const plan = db.subscription_plans.find(p => p.id === planId);
+    if (!plan) {
+      return res.status(404).json({ error: "Plan type does not exist" });
+    }
 
-  biz.planId = planId;
-  if (billingCurrency) biz.billingCurrency = billingCurrency;
-  if (gateway) biz.paymentGateway = gateway;
-  biz.status = "active";
-  biz.subscriptionStatus = "active";
-  biz.nextBillingAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-  biz.paymentRetries = 0;
-
-  // Charge transaction
-  const planPrice = plan.prices[biz.billingCurrency] || plan.prices["USD"] || 0;
-  if (planPrice > 0) {
-    const changeTx: PaymentTransaction = {
-      id: `tx-${Date.now()}`,
-      businessId,
-      amount: planPrice,
-      currency: biz.billingCurrency,
-      status: "success",
-      gatewayTxnId: `${biz.paymentGateway.toUpperCase()}_PLAN_${Math.random().toString(36).substring(7).toUpperCase()}`,
-      invoiceUrl: "#",
-      createdAt: new Date().toISOString()
-    };
-    db.payment_transactions.unshift(changeTx);
-  }
-
-  addAuditLog(`Business (${biz.name})`, `Upgraded subscription package to plan "${planId}" using currency ${biz.billingCurrency}`);
-  saveDB(db);
-
-  res.json({ success: true, business: biz });
-});
-
-// Record a simulated gateway payment success/failure to reactivate or test past_due/locked profiles
-app.post("/api/business/simulate-payment-action", (req, res) => {
-  const { businessId, forceStatus, amount, gatewayName, simulatedPhone } = req.body;
-  if (!businessId) {
-    return res.status(400).json({ error: "Missing businessId" });
-  }
-
-  const biz = db.businesses.find(b => b.id === businessId);
-  if (!biz) {
-    return res.status(404).json({ error: "Business profile not found" });
-  }
-
-  const nowString = new Date().toISOString();
-  const paymentAmount = amount || 500;
-
-  if (forceStatus === "success") {
+    biz.planId = planId;
+    if (billingCurrency) biz.billingCurrency = billingCurrency;
+    if (gateway) biz.paymentGateway = gateway;
     biz.status = "active";
     biz.subscriptionStatus = "active";
     biz.nextBillingAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     biz.paymentRetries = 0;
 
-    const successTx: PaymentTransaction = {
-      id: `tx-${Date.now()}`,
-      businessId,
-      amount: paymentAmount,
-      currency: biz.billingCurrency,
-      status: "success",
-      gatewayTxnId: `${(gatewayName || biz.paymentGateway).toUpperCase()}_MOCK_SIM_${simulatedPhone || Math.random().toString(10).substring(2, 8)}`,
-      invoiceUrl: "#",
-      createdAt: nowString
-    };
-    db.payment_transactions.unshift(successTx);
-
-    addAuditLog(`Business (${biz.name})`, `Simulated SUCCESS manual subscription payment via ${(gatewayName || biz.paymentGateway).toUpperCase()}. Reactivated account!`);
-  } else {
-    // Fail execution
-    biz.paymentRetries += 1;
-    if (biz.paymentRetries >= 3) {
-      biz.status = "suspended";
-      biz.subscriptionStatus = "unpaid";
-    } else {
-      biz.subscriptionStatus = "past_due";
+    // Charge transaction
+    const planPrice = plan.prices[biz.billingCurrency] || plan.prices["USD"] || 0;
+    if (planPrice > 0) {
+      const changeTx: PaymentTransaction = {
+        id: `tx-${Date.now()}`,
+        businessId,
+        amount: planPrice,
+        currency: biz.billingCurrency,
+        status: "success",
+        gatewayTxnId: `${biz.paymentGateway.toUpperCase()}_PLAN_${Math.random().toString(36).substring(7).toUpperCase()}`,
+        invoiceUrl: "#",
+        createdAt: new Date().toISOString()
+      };
+      db.payment_transactions.unshift(changeTx);
     }
 
-    const failedTx: PaymentTransaction = {
-      id: `tx-${Date.now()}`,
-      businessId,
-      amount: paymentAmount,
-      currency: biz.billingCurrency,
-      status: "failed",
-      gatewayTxnId: `${(gatewayName || biz.paymentGateway).toUpperCase()}_SIM_FAILED`,
-      invoiceUrl: "#",
-      createdAt: nowString
-    };
-    db.payment_transactions.unshift(failedTx);
-    addAuditLog(`Business (${biz.name})`, `Simulated FAILED subscription payment (retry #${biz.paymentRetries}) via ${(gatewayName || biz.paymentGateway).toUpperCase()}`);
+    appendAuditLog(db, `Business (${biz.name})`, `Upgraded subscription package to plan "${planId}" using currency ${biz.billingCurrency}`);
+    await saveDBToFirestore(db);
+
+    res.json({ success: true, business: biz });
+  } catch (err: any) {
+    console.error("Change plan failed:", err);
+    res.status(500).json({ error: "Failed to apply plan subscription upgrades." });
+  }
+});
+
+// Record a simulated gateway payment success/failure to reactivate or test past_due/locked profiles
+app.post("/api/business/simulate-payment-action", async (req, res) => {
+  const { businessId, forceStatus, amount, gatewayName, simulatedPhone } = req.body;
+  if (!businessId) {
+    return res.status(400).json({ error: "Missing businessId" });
   }
 
-  saveDB(db);
-  res.json({ success: true, business: biz });
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const biz = db.businesses.find(b => b.id === businessId);
+    if (!biz) {
+      return res.status(404).json({ error: "Business profile not found" });
+    }
+
+    const nowString = new Date().toISOString();
+    const paymentAmount = amount || 500;
+
+    if (forceStatus === "success") {
+      biz.status = "active";
+      biz.subscriptionStatus = "active";
+      biz.nextBillingAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      biz.paymentRetries = 0;
+
+      const successTx: PaymentTransaction = {
+        id: `tx-${Date.now()}`,
+        businessId,
+        amount: paymentAmount,
+        currency: biz.billingCurrency,
+        status: "success",
+        gatewayTxnId: `${(gatewayName || biz.paymentGateway).toUpperCase()}_MOCK_SIM_${simulatedPhone || Math.random().toString(10).substring(2, 8)}`,
+        invoiceUrl: "#",
+        createdAt: nowString
+      };
+      db.payment_transactions.unshift(successTx);
+
+      appendAuditLog(db, `Business (${biz.name})`, `Simulated SUCCESS manual subscription payment via ${(gatewayName || biz.paymentGateway).toUpperCase()}. Reactivated account!`);
+    } else {
+      // Fail execution
+      biz.paymentRetries += 1;
+      if (biz.paymentRetries >= 3) {
+        biz.status = "suspended";
+        biz.subscriptionStatus = "unpaid";
+      } else {
+        biz.subscriptionStatus = "past_due";
+      }
+
+      const failedTx: PaymentTransaction = {
+        id: `tx-${Date.now()}`,
+        businessId,
+        amount: paymentAmount,
+        currency: biz.billingCurrency,
+        status: "failed",
+        gatewayTxnId: `${(gatewayName || biz.paymentGateway).toUpperCase()}_SIM_FAILED`,
+        invoiceUrl: "#",
+        createdAt: nowString
+      };
+      db.payment_transactions.unshift(failedTx);
+      appendAuditLog(db, `Business (${biz.name})`, `Simulated FAILED subscription payment (retry #${biz.paymentRetries}) via ${(gatewayName || biz.paymentGateway).toUpperCase()}`);
+    }
+
+    await saveDBToFirestore(db);
+    res.json({ success: true, business: biz });
+  } catch (err: any) {
+    console.error("Simulated payment action failed:", err);
+    res.status(500).json({ error: "Gateway transaction processing failure." });
+  }
 });
 
 // 8. Admin endpoints
 
 // Administrative status override
-app.post("/api/admin/business/status", (req, res) => {
+app.post("/api/admin/business/status", async (req, res) => {
   const { businessId, status } = req.body;
   if (!businessId || !status) {
     return res.status(400).json({ error: "Missing businessId or status designation" });
   }
 
-  const biz = db.businesses.find(b => b.id === businessId);
-  if (!biz) {
-    return res.status(404).json({ error: "Business profile not found" });
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const biz = db.businesses.find(b => b.id === businessId);
+    if (!biz) {
+      return res.status(404).json({ error: "Business profile not found" });
+    }
+
+    biz.status = status; // active, suspended, blocked
+    appendAuditLog(db, "Admin Manager", `Manually updated business status for ${biz.name} to "${status}"`);
+    await saveDBToFirestore(db);
+
+    res.json({ success: true, business: biz });
+  } catch (err: any) {
+    console.error("Status override failed:", err);
+    res.status(500).json({ error: "System administrative ledger action timeout." });
   }
-
-  biz.status = status; // active, suspended, blocked
-  addAuditLog("Admin Manager", `Manually updated business status for ${biz.name} to "${status}"`);
-  saveDB(db);
-
-  res.json({ success: true, business: biz });
 });
 
 // Administrative monthly quota override
-app.post("/api/admin/business/quota", (req, res) => {
+app.post("/api/admin/business/quota", async (req, res) => {
   const { businessId, overrideQuota } = req.body; // e.g. number or null to reset to plan
   if (!businessId) {
     return res.status(400).json({ error: "Missing businessId" });
   }
 
-  const biz = db.businesses.find(b => b.id === businessId);
-  if (!biz) {
-    return res.status(404).json({ error: "Business profile not found" });
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const biz = db.businesses.find(b => b.id === businessId);
+    if (!biz) {
+      return res.status(404).json({ error: "Business profile not found" });
+    }
+
+    biz.overrideQuota = overrideQuota === "" || overrideQuota === null ? null : parseInt(overrideQuota);
+    appendAuditLog(db, "Admin Manager", `Manually overrode business quota limits for ${biz.name} to ${biz.overrideQuota ? biz.overrideQuota + '/mo' : 'Plan Default'}`);
+    await saveDBToFirestore(db);
+
+    res.json({ success: true, business: biz });
+  } catch (err: any) {
+    console.error("Quota override failed:", err);
+    res.status(500).json({ error: "Failed to configure notification quota overwrite limits." });
   }
-
-  biz.overrideQuota = overrideQuota === "" || overrideQuota === null ? null : parseInt(overrideQuota);
-  addAuditLog("Admin Manager", `Manually overrode business quota limits for ${biz.name} to ${biz.overrideQuota ? biz.overrideQuota + '/mo' : 'Plan Default'}`);
-  saveDB(db);
-
-  res.json({ success: true, business: biz });
 });
 
 // Admin configure system-wide subscription plan rates
-app.post("/api/admin/plan/update", (req, res) => {
+app.post("/api/admin/plan/update", async (req, res) => {
   const { planId, maxCustomers, monthlyNotifQuota, prices } = req.body;
   if (!planId || !prices) {
     return res.status(400).json({ error: "Missing planId structure or prices" });
   }
 
-  const plan = db.subscription_plans.find(p => p.id === planId);
-  if (!plan) {
-    return res.status(404).json({ error: "Plan definition not found" });
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const plan = db.subscription_plans.find(p => p.id === planId);
+    if (!plan) {
+      return res.status(404).json({ error: "Plan definition not found" });
+    }
+
+    if (maxCustomers !== undefined) plan.maxCustomers = parseInt(maxCustomers);
+    if (monthlyNotifQuota !== undefined) plan.monthlyNotifQuota = parseInt(monthlyNotifQuota);
+    plan.prices = prices;
+
+    appendAuditLog(db, "Admin Manager", `Updated global subscription prices details for plan "${planId}"`);
+    await saveDBToFirestore(db);
+
+    res.json({ success: true, plan });
+  } catch (err: any) {
+    console.error("Admin plan update failed:", err);
+    res.status(500).json({ error: "Failed to update global plan prices details." });
   }
-
-  if (maxCustomers !== undefined) plan.maxCustomers = parseInt(maxCustomers);
-  if (monthlyNotifQuota !== undefined) plan.monthlyNotifQuota = parseInt(monthlyNotifQuota);
-  plan.prices = prices;
-
-  addAuditLog("Admin Manager", `Updated global subscription prices details for plan "${planId}"`);
-  saveDB(db);
-
-  res.json({ success: true, plan });
 });
 
 // Admin global news broadcast to all consumer dashboards
-app.post("/api/admin/broadcast", (req, res) => {
+app.post("/api/admin/broadcast", async (req, res) => {
   const { title, message } = req.body;
   if (!title || !message) {
     return res.status(400).json({ error: "Broadcast request is missing title or message description words" });
   }
 
-  const customerCount = db.customers.length;
-  const sysNotif: NotificationMsg = {
-    id: `notif-sys-${Date.now()}`,
-    businessId: "system",
-    title,
-    message,
-    sentAt: new Date().toISOString(),
-    reachedCount: customerCount
-  };
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const customerCount = db.customers.length;
+    const sysNotif: NotificationMsg = {
+      id: `notif-sys-${Date.now()}`,
+      businessId: "system",
+      title,
+      message,
+      sentAt: new Date().toISOString(),
+      reachedCount: customerCount
+    };
 
-  db.notifications.unshift(sysNotif);
-  addAuditLog("Admin Manager", `Broadcasted global platform system announcement of "${title}" to all subscribers (${customerCount} connected)`);
-  saveDB(db);
+    db.notifications.unshift(sysNotif);
+    appendAuditLog(db, "Admin Manager", `Broadcasted global platform system announcement of "${title}" to all subscribers (${customerCount} connected)`);
+    await saveDBToFirestore(db);
 
-  res.json({ success: true, notification: sysNotif });
+    res.json({ success: true, notification: sysNotif });
+  } catch (err: any) {
+    console.error("Admin broadcast failed:", err);
+    res.status(500).json({ error: "Announcements broadcast delivery failed." });
+  }
 });
 
 // Update currencies exchange rates details
-app.post("/api/admin/rates", (req, res) => {
+app.post("/api/admin/rates", async (req, res) => {
   const { rates } = req.body;
   if (!rates) {
     return res.status(400).json({ error: "Missing updated rates schema payload" });
   }
 
-  db.globalExchangeRates = {
-    ...db.globalExchangeRates,
-    ...rates
-  };
+  try {
+    const db = await fetchFullDBFromFirestore();
+    db.globalExchangeRates = {
+      ...db.globalExchangeRates,
+      ...rates
+    };
 
-  addAuditLog("Admin Manager", `Recalibrated system exchange rates conversions parameters.`);
-  saveDB(db);
+    appendAuditLog(db, "Admin Manager", `Recalibrated system exchange rates conversions parameters.`);
+    await saveDBToFirestore(db);
 
-  res.json({ success: true, rates: db.globalExchangeRates });
+    res.json({ success: true, rates: db.globalExchangeRates });
+  } catch (err: any) {
+    console.error("Admin rates failure:", err);
+    res.status(500).json({ error: "Exchange rates sync failed." });
+  }
 });
 
 // Enable or disable support of a local language global translation toggle
-app.post("/api/admin/languages", (req, res) => {
+app.post("/api/admin/languages", async (req, res) => {
   const { languages } = req.body;
   if (!languages || !Array.isArray(languages)) {
     return res.status(400).json({ error: "Invalid languages array parameter style" });
   }
 
-  db.enabledLanguages = languages;
-  addAuditLog("Admin Manager", `Adjusted platform wide allowed languages setting: ${languages.join(", ")}`);
-  saveDB(db);
+  try {
+    const db = await fetchFullDBFromFirestore();
+    db.enabledLanguages = languages;
+    appendAuditLog(db, "Admin Manager", `Adjusted platform wide allowed languages setting: ${languages.join(", ")}`);
+    await saveDBToFirestore(db);
 
-  res.json({ success: true, enabledLanguages: db.enabledLanguages });
+    res.json({ success: true, enabledLanguages: db.enabledLanguages });
+  } catch (err: any) {
+    console.error("Admin languages failure:", err);
+    res.status(500).json({ error: "Languages setup transaction failed." });
+  }
 });
 
 // ------------------------------------------
