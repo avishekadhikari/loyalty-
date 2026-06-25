@@ -8,7 +8,7 @@ import { createServer as createViteServer } from "vite";
 import { AppDatabase, Business, Customer, CustomerBusinessRelation, SubscriptionPlan, PaymentTransaction, NotificationMsg, AuditLog } from "./src/types";
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 const DB_FILE = path.join(process.cwd(), "db.json");
 
 // Define custom signature key for QR codes
@@ -1505,4 +1505,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
