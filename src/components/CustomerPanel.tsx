@@ -386,7 +386,7 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
       } else {
         setScanResult({ 
           success: false, 
-          message: "Unrecognized QR code target. Please verify you are scanning a valid Remix Loyalty QR code." 
+          message: "Unrecognized QR code target. Please verify you are scanning a valid Loyalty Bridge QR code." 
         });
       }
     } catch (err) {

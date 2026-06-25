@@ -486,7 +486,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-sm font-black tracking-tight flex items-center gap-1.5 leading-none text-white">
-                REMIX LOYALTY
+                LOYALTY BRIDGE
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/10 tracking-wider text-indigo-300 border border-white/10 font-mono">B2B2C MVP</span>
               </h1>
               <p className="text-[10px] text-slate-400 leading-none mt-1">Unified loyalty for local Nepal and Global Merchants</p>
@@ -581,6 +581,12 @@ export default function App() {
                 onRefresh={async () => { await fetchDB(true); }}
                 onSelectBusiness={(id) => setSelectedBusinessId(id)}
                 onNavigateToRole={(role) => setActiveRole(role)}
+                onLoginBusinessSuccess={(id) => {
+                  localStorage.setItem("logged_in_business_id", id);
+                  setLoggedInBusinessId(id);
+                  setSelectedBusinessId(id);
+                  setActiveRole("business");
+                }}
               />
             </div>
           )}
@@ -1112,8 +1118,8 @@ export default function App() {
       {/* Sandbox footer credits */}
       <footer className="bg-[#0c0e14]/80 text-slate-500 text-xs py-5 text-center font-mono border-t border-white/10 mt-auto">
         <div className="max-w-7xl mx-auto px-4 space-y-1">
-          <p className="text-slate-300 font-bold uppercase tracking-wider text-[10px]">Remix: Loyalty Nepal and Worldwide B2B2C Registry Engine</p>
-          <p>© 2026 Remix Loyalty. Standard esewa (Sandbox phone 9861774000) and Stripe interfaces simulated perfectly.</p>
+          <p className="text-slate-300 font-bold uppercase tracking-wider text-[10px]">Loyalty Bridge Nepal and Worldwide B2B2C Registry Engine</p>
+          <p>© 2026 Loyalty Bridge. Standard esewa (Sandbox phone 9861774000) and Stripe interfaces simulated perfectly.</p>
         </div>
       </footer>
 

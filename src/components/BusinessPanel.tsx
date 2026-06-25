@@ -315,7 +315,7 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
             </div>
             <div>
               <h2 className="text-md font-extrabold tracking-tight font-display">Merchant Portal</h2>
-              <p className="text-[10px] text-indigo-300 font-mono tracking-wider">REMIX Loyalty B2B</p>
+              <p className="text-[10px] text-indigo-300 font-mono tracking-wider">LOYALTY BRIDGE B2B</p>
             </div>
           </div>
 
@@ -409,7 +409,7 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
 
         {/* Footer info brand */}
         <div className="pt-4 border-t border-white/5 text-[10px] text-slate-500 font-mono mt-4 lg:mt-0">
-          Remix Admin B2B Engine v1.0.4 <br /> Secure Token Verification Settle
+          Loyalty Bridge Admin B2B Engine v1.0.4 <br /> Secure Token Verification Settle
         </div>
       </div>
 
@@ -1608,7 +1608,7 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
                             <label className="text-[9px] uppercase text-slate-400 font-black tracking-wide block">HTML embed iframe card model snippet</label>
                             <pre className="p-2.5 bg-slate-950 font-mono text-[9.5px] rounded-lg border border-white/5 text-emerald-400 hover:text-white transition overflow-x-auto">
 {`<iframe 
-  src="${typeof window !== "undefined" ? window.location.href.split('?')[0].replace(/\/$/, '') : "https://remix-loyalty-nepal.app"}/?role=customer&enroll=${activeBiz.id}"
+  src="${typeof window !== "undefined" ? window.location.href.split('?')[0].replace(/\/$/, '') : "https://loyalty-bridge.app"}/?role=customer&enroll=${activeBiz.id}"
   width="100%" 
   height="600px" 
   style="border:none; border-radius:16px; background:#0c0e14;"

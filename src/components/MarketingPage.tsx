@@ -12,16 +12,19 @@ interface MarketingPageProps {
   onRefresh: () => Promise<void>;
   onSelectBusiness: (bizId: string) => void;
   onNavigateToRole: (role: "customer" | "business" | "admin") => void;
+  onLoginBusinessSuccess?: (bizId: string) => void;
 }
 
-export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavigateToRole }: MarketingPageProps) {
+export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavigateToRole, onLoginBusinessSuccess }: MarketingPageProps) {
   // Subscription / Registration form stats
   const [showRegModal, setShowRegModal] = useState(false);
   const [successNewBiz, setSuccessNewBiz] = useState<Business | null>(null);
+  const [modalTab, setModalTab] = useState<"register" | "login">("register");
 
   // Form Fields
   const [bizId, setBizId] = useState("");
   const [bizName, setBizName] = useState("");
+  const [bizPassword, setBizPassword] = useState("");
   const [bizCountry, setBizCountry] = useState("Nepal");
   const [bizCity, setBizCity] = useState("Kathmandu");
   const [bizCurrency, setBizCurrency] = useState("NPR");
@@ -32,6 +35,12 @@ export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavig
   const [gatewayValue, setGatewayValue] = useState<"esewa" | "khalti" | "stripe">("esewa");
   const [regError, setRegError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Login form fields
+  const [loginId, setLoginId] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Contact State Variables
   const [contactName, setContactName] = useState("");
@@ -67,6 +76,7 @@ export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavig
         body: JSON.stringify({
           id: bizId,
           name: bizName,
+          password: bizPassword || "123456",
           country: bizCountry,
           city: bizCity,
           operatingCurrency: bizCurrency,
@@ -101,6 +111,43 @@ export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavig
     onNavigateToRole("business");
     setShowRegModal(false);
     setSuccessNewBiz(null);
+  };
+
+  const handleModalLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginId.trim() || !loginPassword.trim()) {
+      setLoginError("Please enter both Store ID and Password.");
+      return;
+    }
+    setLoginError("");
+    setIsLoggingIn(true);
+
+    try {
+      const res = await fetch("/api/business/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: loginId.trim(), password: loginPassword.trim() })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (onLoginBusinessSuccess) {
+          onLoginBusinessSuccess(data.business.id);
+        } else {
+          localStorage.setItem("logged_in_business_id", data.business.id);
+          onSelectBusiness(data.business.id);
+          onNavigateToRole("business");
+        }
+        setShowRegModal(false);
+        setLoginId("");
+        setLoginPassword("");
+      } else {
+        setLoginError(data.error || "Authentication failed. Incorrect ID or password.");
+      }
+    } catch (err) {
+      setLoginError("Server unreachable. Check your router connection.");
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
   return (
@@ -259,7 +306,7 @@ export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavig
             Register and Unlock Both Systems Instantly
           </h3>
           <p className="text-xs text-slate-300 max-w-xl font-medium leading-relaxed">
-            Unlike other legacy loyalty aggregators that lock you into rigid templates, <b>Remix Loyalty</b> gives 
+            Unlike other legacy loyalty aggregators that lock you into rigid templates, <b>Loyalty Bridge</b> gives 
             self-registering partners complete B2C permissions on the Premium ledger tier for 14 Days free. 
             Test points rewards, dispatch broadcast news, check rate-limiting algorithms, and claim stamps in one system.
           </p>
@@ -440,7 +487,7 @@ export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavig
               
               {/* WhatsApp Premium Support Box */}
               <a 
-                href="https://wa.me/9779861774000?text=Hello%20Remix%20Loyalty!%20I%20want%20to%20onboard%20my%20business%20to%20the%20loyalty%20system."
+                href="https://wa.me/9779861774000?text=Hello%20Loyalty%20Bridge!%20I%20want%20to%20onboard%20my%20business%20to%20the%20loyalty%20system."
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="block bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-4 hover:border-emerald-400 hover:bg-emerald-950/60 transition duration-150 group"
@@ -476,7 +523,7 @@ export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavig
                   <Mail className="w-4 h-4 text-indigo-400 shrink-0" />
                   <div>
                     <p className="text-slate-400 font-normal">Corporate Product Inquiry</p>
-                    <p className="font-mono font-bold text-white">hello@remixloyalty.com</p>
+                    <p className="font-mono font-bold text-white">hello@loyaltybridge.com</p>
                   </div>
                 </div>
 
@@ -504,7 +551,7 @@ export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavig
                 onSubmit={(e) => {
                   e.preventDefault();
                   const encodedMsg = encodeURIComponent(
-                    `Hello Remix Loyalty Team!\n\nName: ${contactName}\nPhone: ${contactPhone}\nBusiness Brand: ${contactBrand}\nInquiry: ${contactMessage}`
+                    `Hello Loyalty Bridge Team!\n\nName: ${contactName}\nPhone: ${contactPhone}\nBusiness Brand: ${contactBrand}\nInquiry: ${contactMessage}`
                   );
                   window.open(`https://wa.me/9779861774000?text=${encodedMsg}`, "_blank");
                   setContactSuccess(true);
@@ -594,7 +641,7 @@ export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavig
                 <div className="flex flex-col sm:flex-row gap-2.5 w-full max-w-sm pt-2">
                   <a 
                     href={`https://wa.me/9779861774000?text=${encodeURIComponent(
-                      `Hello Remix Loyalty Team!\n\nName: ${contactName}\nPhone: ${contactPhone}\nBusiness Brand: ${contactBrand}\nInquiry: ${contactMessage}`
+                    `Hello Loyalty Bridge Team!\n\nName: ${contactName}\nPhone: ${contactPhone}\nBusiness Brand: ${contactBrand}\nInquiry: ${contactMessage}`
                     )}`}
                     target="_blank" 
                     rel="noreferrer"
@@ -633,7 +680,7 @@ export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavig
               <div className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-1.5 rounded-lg">
                 <Sparkles className="w-4 h-4" />
               </div>
-              <span className="font-black text-white uppercase tracking-wider font-mono text-[13px]">REMIX LOYALTY</span>
+              <span className="font-black text-white uppercase tracking-wider font-mono text-[13px]">LOYALTY BRIDGE</span>
             </div>
             <p className="text-[11px] leading-relaxed text-slate-400">
               Transform random walk-in traffic into highly loyal returning customers using our cryptographic sandbox stamp matrices and instant SMS receipt automation codes.
@@ -695,10 +742,10 @@ export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavig
               <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span> Live Support Channel
             </h5>
             <p className="text-[10px] text-slate-400 leading-normal">
-              Direct connection with the supervisor of Remix Loyalty for instant B2B setup queries and license approvals.
+              Direct connection with the supervisor of Loyalty Bridge for instant B2B setup queries and license approvals.
             </p>
             <a 
-              href="https://wa.me/9779861774000?text=Hello%20Remix%20Team!%20Please%20guide%20me%20on%20how%20to%20obtain%20a%20partner%20license."
+              href="https://wa.me/9779861774000?text=Hello%20Loyalty%20Bridge%20Team!%20Please%20guide%20me%20on%20how%20to%20obtain%20a%20partner%20license."
               target="_blank"
               rel="noopener noreferrer"
               className="mt-2 w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-[10.5px] py-1.5 px-3 rounded-xl text-center uppercase tracking-wider flex items-center justify-center gap-1.5 transition"
@@ -712,7 +759,7 @@ export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavig
 
         {/* copyright metadata block */}
         <div className="max-w-7xl mx-auto px-6 border-t border-white/5 mt-8 pt-5 flex flex-col sm:flex-row justify-between items-center gap-3 text-[10px] text-slate-500 font-mono">
-          <p>© 2026 Remix Loyalty Ledger Network Ltd. All rights reserved.</p>
+          <p>© 2026 Loyalty Bridge Ledger Network Ltd. All rights reserved.</p>
           <div className="flex gap-4">
             <span className="hover:text-slate-350 cursor-pointer">Terms of Service</span>
             <span>•</span>
@@ -756,207 +803,318 @@ export default function MarketingPage({ db, onRefresh, onSelectBusiness, onNavig
             </button>
 
             {!successNewBiz ? (
-              <form onSubmit={handleRegister} className="space-y-5 text-white">
-                
-                {/* Header */}
-                <div className="space-y-1 text-center">
-                  <div className="bg-indigo-500/10 text-indigo-400 p-3 rounded-2xl w-14 h-14 mx-auto flex items-center justify-center border border-indigo-500/25">
-                    <UserPlus className="w-6 h-6" />
-                  </div>
-                  <h3 className="text-lg font-black tracking-tight uppercase">Quick Merchant Registration</h3>
-                  <p className="text-[11px] text-slate-400 font-medium tracking-wide">
-                    Enroll instantly under the <span className="text-indigo-400 font-black">14-Day Free Trial</span>. Custom stamps & points loyalty active.
-                  </p>
-                </div>
-
-                {regError && (
-                  <p className="text-[11px] p-3 rounded-lg border border-red-500/20 bg-red-500/15 text-red-300 font-black text-center animate-shake">
-                    ⚠️ {regError}
-                  </p>
-                )}
-
-                {/* Form fields layout */}
-                <div className="space-y-3 text-xs">
-                  
-                  {/* Name & ID Slug */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Retail Brand Name</label>
-                      <input 
-                        type="text"
-                        placeholder="e.g. Pashupatinath Coffee Roast"
-                        value={bizName}
-                        onChange={(e) => handleNameChange(e.target.value)}
-                        required
-                        className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold font-sans text-white focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">URL Key Identifier</label>
-                      <input 
-                        type="text"
-                        placeholder="e.g. pashupati-coffee"
-                        value={bizId}
-                        onChange={(e) => setBizId(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
-                        required
-                        className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-indigo-300 focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Location & Operating Currency */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Country</label>
-                      <input 
-                        type="text"
-                        placeholder="e.g. Nepal"
-                        value={bizCountry}
-                        onChange={(e) => setBizCountry(e.target.value)}
-                        required
-                        className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">City Location</label>
-                      <input 
-                        type="text"
-                        placeholder="e.g. Kathmandu"
-                        value={bizCity}
-                        onChange={(e) => setBizCity(e.target.value)}
-                        required
-                        className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Currency Code</label>
-                      <select 
-                        value={bizCurrency}
-                        onChange={(e) => setBizCurrency(e.target.value)}
-                        className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-indigo-500"
-                      >
-                        <option value="NPR">NPR (Rs.)</option>
-                        <option value="USD">USD ($)</option>
-                        <option value="INR">INR (₹)</option>
-                        <option value="GBP">GBP (£)</option>
-                        <option value="EUR">EUR (€)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Initial Loyalty Choice */}
-                  <div className="bg-white/5 p-3 rounded-2xl border border-white/10 space-y-2">
-                    <label className="text-[10px] text-indigo-300 uppercase font-black tracking-wider block">
-                      Starting Loyalty Mode (Flip live during trial)
-                    </label>
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedLoyaltyMode("stamp")}
-                        className={`py-2 px-3 rounded-xl border text-center font-bold font-sans cursor-pointer transition ${
-                          selectedLoyaltyMode === "stamp"
-                            ? "bg-indigo-500 text-white border-indigo-500"
-                            : "bg-black/40 text-slate-400 border-white/10 hover:text-white"
-                        }`}
-                      >
-                        💮 Stamp Cards
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedLoyaltyMode("point")}
-                        className={`py-2 px-3 rounded-xl border text-center font-bold font-sans cursor-pointer transition ${
-                          selectedLoyaltyMode === "point"
-                            ? "bg-indigo-500 text-white border-indigo-500"
-                            : "bg-black/40 text-slate-400 border-white/10 hover:text-white"
-                        }`}
-                      >
-                        💎 Points Ledger
-                      </button>
-                    </div>
-                    <p className="text-[9.5px] text-slate-400 text-center font-medium">
-                      Both features are fully functional inside your trial container!
-                    </p>
-                  </div>
-
-                  {/* Reward Threshold settings inputs dynamically */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    {selectedLoyaltyMode === "stamp" ? (
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Target Stamps Goal</label>
-                        <input 
-                          type="number"
-                          min="3"
-                          max="20"
-                          value={stampLimit}
-                          onChange={(e) => setStampLimit(parseInt(e.target.value || "10"))}
-                          className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none"
-                        />
-                      </div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Target Points Goal</label>
-                        <input 
-                          type="number"
-                          min="50"
-                          max="5000"
-                          value={pointsLimit}
-                          onChange={(e) => setPointsLimit(parseInt(e.target.value || "500"))}
-                          className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none"
-                        />
-                      </div>
-                    )}
-                    
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Coupon Offer Description</label>
-                      <input 
-                        type="text"
-                        placeholder="e.g. Free Hot Cappuccino or 10% Discount"
-                        value={rewardDesc}
-                        onChange={(e) => setRewardDesc(e.target.value)}
-                        required
-                        className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-sans font-bold text-white focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Payment Gateway for simulation Billing */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Local Gateway integration</label>
-                    <select
-                      value={gatewayValue}
-                      onChange={(e) => setGatewayValue(e.target.value as any)}
-                      className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-sans font-extrabold text-white focus:outline-none"
-                    >
-                      <option value="esewa">eSewa Wallet (Nepal Sandbox Integration)</option>
-                      <option value="khalti">Khalti Instant (Pokhara Outlets Integration)</option>
-                      <option value="stripe">Stripe international (Global Card Settlements)</option>
-                    </select>
-                  </div>
-
-                </div>
-
-                <div className="pt-2">
+              <div className="space-y-6">
+                {/* Tabs switcher to toggle between Registration and Login */}
+                <div className="flex bg-[#0c0e14]/60 p-1 rounded-2xl border border-white/10">
                   <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full bg-gradient-to-r from-emerald-500 to-indigo-600 hover:opacity-95 text-white font-black text-xs py-3.5 rounded-xl transition duration-150 shadow-lg tracking-wider uppercase cursor-pointer flex justify-center items-center gap-2"
+                    type="button"
+                    onClick={() => setModalTab("register")}
+                    className={`flex-1 py-2 text-xs font-bold text-center rounded-xl transition-all cursor-pointer ${
+                      modalTab === "register"
+                        ? "bg-indigo-500 text-white shadow-md font-extrabold"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
                   >
-                    {isSubmitting ? (
-                      <span>Synchronizing Ledger Ledger...</span>
-                    ) : (
-                      <>
-                        <span>Activate 14-Day Free Premium Trial</span>
-                        <Check className="w-4 h-4" />
-                      </>
-                    )}
+                    📝 Create Free Trial Store
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalTab("login")}
+                    className={`flex-1 py-2 text-xs font-bold text-center rounded-xl transition-all cursor-pointer ${
+                      modalTab === "login"
+                        ? "bg-indigo-500 text-white shadow-md font-extrabold"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    🔑 Merchant Portal Login
                   </button>
                 </div>
 
-                <p className="text-[8.5px] text-slate-500 text-center font-mono">
-                  * Dynamic credentials setup. No actual bank details necessary. Complete local sandbox state storage.
-                </p>
+                {modalTab === "register" ? (
+                  <form onSubmit={handleRegister} className="space-y-5 text-white animate-fadeIn">
+                    
+                    {/* Header */}
+                    <div className="space-y-1 text-center">
+                      <div className="bg-indigo-500/10 text-indigo-400 p-3 rounded-2xl w-14 h-14 mx-auto flex items-center justify-center border border-indigo-500/25">
+                        <UserPlus className="w-6 h-6" />
+                      </div>
+                      <h3 className="text-lg font-black tracking-tight uppercase">Quick Merchant Registration</h3>
+                      <p className="text-[11px] text-slate-400 font-medium tracking-wide">
+                        Enroll instantly under the <span className="text-indigo-400 font-black">14-Day Free Trial</span>. Custom stamps & points loyalty active.
+                      </p>
+                    </div>
 
-              </form>
+                    {regError && (
+                      <p className="text-[11px] p-3 rounded-lg border border-red-500/20 bg-red-500/15 text-red-300 font-black text-center animate-shake">
+                        ⚠️ {regError}
+                      </p>
+                    )}
+
+                    {/* Form fields layout */}
+                    <div className="space-y-3 text-xs">
+                      
+                      {/* Name & ID Slug */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Retail Brand Name</label>
+                          <input 
+                            type="text"
+                            placeholder="e.g. Pashupatinath Coffee Roast"
+                            value={bizName}
+                            onChange={(e) => handleNameChange(e.target.value)}
+                            required
+                            className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold font-sans text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">URL Key Identifier</label>
+                          <input 
+                            type="text"
+                            placeholder="e.g. pashupati-coffee"
+                            value={bizId}
+                            onChange={(e) => setBizId(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
+                            required
+                            className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-indigo-300 focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* B2B Password input */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">B2B Portal Password</label>
+                        <input 
+                          type="password"
+                          placeholder="Create secure portal password (used to log back in)"
+                          value={bizPassword}
+                          onChange={(e) => setBizPassword(e.target.value)}
+                          required
+                          className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      {/* Location & Operating Currency */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Country</label>
+                          <input 
+                            type="text"
+                            placeholder="e.g. Nepal"
+                            value={bizCountry}
+                            onChange={(e) => setBizCountry(e.target.value)}
+                            required
+                            className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">City Location</label>
+                          <input 
+                            type="text"
+                            placeholder="e.g. Kathmandu"
+                            value={bizCity}
+                            onChange={(e) => setBizCity(e.target.value)}
+                            required
+                            className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Currency Code</label>
+                          <select 
+                            value={bizCurrency}
+                            onChange={(e) => setBizCurrency(e.target.value)}
+                            className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="NPR">NPR (Rs.)</option>
+                            <option value="USD">USD ($)</option>
+                            <option value="INR">INR (₹)</option>
+                            <option value="GBP">GBP (£)</option>
+                            <option value="EUR">EUR (€)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Initial Loyalty Choice */}
+                      <div className="bg-white/5 p-3 rounded-2xl border border-white/10 space-y-2">
+                        <label className="text-[10px] text-indigo-300 uppercase font-black tracking-wider block">
+                          Starting Loyalty Mode (Flip live during trial)
+                        </label>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLoyaltyMode("stamp")}
+                            className={`py-2 px-3 rounded-xl border text-center font-bold font-sans cursor-pointer transition ${
+                              selectedLoyaltyMode === "stamp"
+                                ? "bg-indigo-500 text-white border-indigo-500"
+                                : "bg-black/40 text-slate-400 border-white/10 hover:text-white"
+                            }`}
+                          >
+                            💮 Stamp Cards
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLoyaltyMode("point")}
+                            className={`py-2 px-3 rounded-xl border text-center font-bold font-sans cursor-pointer transition ${
+                              selectedLoyaltyMode === "point"
+                                ? "bg-indigo-500 text-white border-indigo-500"
+                                : "bg-black/40 text-slate-400 border-white/10 hover:text-white"
+                            }`}
+                          >
+                            💎 Points Ledger
+                          </button>
+                        </div>
+                        <p className="text-[9.5px] text-slate-400 text-center font-medium">
+                          Both features are fully functional inside your trial container!
+                        </p>
+                      </div>
+
+                      {/* Reward Threshold settings inputs dynamically */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        {selectedLoyaltyMode === "stamp" ? (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Target Stamps Goal</label>
+                            <input 
+                              type="number"
+                              min="3"
+                              max="20"
+                              value={stampLimit}
+                              onChange={(e) => setStampLimit(parseInt(e.target.value || "10"))}
+                              className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none"
+                            />
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Target Points Goal</label>
+                            <input 
+                              type="number"
+                              min="50"
+                              max="5000"
+                              value={pointsLimit}
+                              onChange={(e) => setPointsLimit(parseInt(e.target.value || "500"))}
+                              className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none"
+                            />
+                          </div>
+                        )}
+                        
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Coupon Offer Description</label>
+                          <input 
+                            type="text"
+                            placeholder="e.g. Free Hot Cappuccino or 10% Discount"
+                            value={rewardDesc}
+                            onChange={(e) => setRewardDesc(e.target.value)}
+                            required
+                            className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-sans font-bold text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Payment Gateway for simulation Billing */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Local Gateway integration</label>
+                        <select
+                          value={gatewayValue}
+                          onChange={(e) => setGatewayValue(e.target.value as any)}
+                          className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-sans font-extrabold text-white focus:outline-none"
+                        >
+                          <option value="esewa">eSewa Wallet (Nepal Sandbox Integration)</option>
+                          <option value="khalti">Khalti Instant (Pokhara Outlets Integration)</option>
+                          <option value="stripe">Stripe international (Global Card Settlements)</option>
+                        </select>
+                      </div>
+
+                    </div>
+
+                    <div className="pt-2">
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="w-full bg-gradient-to-r from-emerald-500 to-indigo-600 hover:opacity-95 text-white font-black text-xs py-3.5 rounded-xl transition duration-150 shadow-lg tracking-wider uppercase cursor-pointer flex justify-center items-center gap-2"
+                      >
+                        {isSubmitting ? (
+                          <span>Synchronizing Ledger...</span>
+                        ) : (
+                          <>
+                            <span>Activate 14-Day Free Premium Trial</span>
+                            <Check className="w-4 h-4" />
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <p className="text-[8.5px] text-slate-500 text-center font-mono">
+                      * Dynamic credentials setup. No actual bank details necessary. Complete local sandbox state storage.
+                    </p>
+
+                  </form>
+                ) : (
+                  <form onSubmit={handleModalLogin} className="space-y-5 text-white animate-fadeIn">
+                    
+                    {/* Header */}
+                    <div className="space-y-1 text-center">
+                      <div className="bg-indigo-500/10 text-indigo-400 p-3 rounded-2xl w-14 h-14 mx-auto flex items-center justify-center border border-indigo-500/25">
+                        <Lock className="w-6 h-6" />
+                      </div>
+                      <h3 className="text-lg font-black tracking-tight uppercase">Merchant Portal Login</h3>
+                      <p className="text-[11px] text-slate-400 font-medium tracking-wide">
+                        Sign back into your active <span className="text-indigo-400 font-black">14-Day Free Trial</span> account ledger.
+                      </p>
+                    </div>
+
+                    {loginError && (
+                      <p className="text-[11px] p-3 rounded-lg border border-red-500/20 bg-red-500/15 text-red-300 font-black text-center animate-shake">
+                        ⚠️ {loginError}
+                      </p>
+                    )}
+
+                    <div className="space-y-4 text-xs">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Store URL Key ID</label>
+                        <input 
+                          type="text"
+                          placeholder="e.g. kathmandu-coffee"
+                          value={loginId}
+                          onChange={(e) => setLoginId(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
+                          required
+                          className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-indigo-300 focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">Security Password</label>
+                        <input 
+                          type="password"
+                          placeholder="Enter your merchant portal security password"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          required
+                          className="w-full bg-[#0c0e14]/90 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <button
+                        type="submit"
+                        disabled={isLoggingIn}
+                        className="w-full bg-gradient-to-r from-emerald-500 to-indigo-600 hover:opacity-95 text-white font-black text-xs py-3.5 rounded-xl transition duration-150 shadow-lg tracking-wider uppercase cursor-pointer flex justify-center items-center gap-2"
+                      >
+                        {isLoggingIn ? (
+                          <span>Verifying Credentials...</span>
+                        ) : (
+                          <>
+                            <span>Login to Merchant Portal</span>
+                            <Check className="w-4 h-4" />
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <p className="text-[8.5px] text-slate-500 text-center font-mono">
+                      * Sandbox state is persisted. Demo accounts are Kathmandu Valley Coffee (`kathmandu-coffee`), Himalayan Mountaineering (`himalayan-mountaineering`), or Yeti Bakery (`yeti-bakery`) with password `123456`.
+                    </p>
+
+                  </form>
+                )}
+              </div>
             ) : (
               <div className="text-center space-y-6 py-4 text-white animate-fadeIn">
                 <div className="bg-emerald-500/10 text-emerald-400 p-4 rounded-full w-20 h-20 mx-auto flex items-center justify-center border border-emerald-500/35">

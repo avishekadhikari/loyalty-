@@ -317,7 +317,7 @@ const initialDatabase: AppDatabase = {
     {
       id: "notif-system",
       businessId: "system", // Admin broadcast
-      title: "System Update: Welcome to Remix Loyalty!",
+      title: "System Update: Welcome to Loyalty Bridge!",
       message: "We've added international multi-currency pricing and instant push alerts for local businesses.",
       sentAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
       reachedCount: 3
@@ -1551,7 +1551,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[Remix Loyalty Server] running on http://0.0.0.0:${PORT}`);
+    console.log(`[Loyalty Bridge Server] running on http://0.0.0.0:${PORT}`);
   });
 }
 

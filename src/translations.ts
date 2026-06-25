@@ -6,7 +6,7 @@ export interface TranslationsMap {
 
 export const translations: TranslationsMap = {
   en: {
-    appName: "Remix Loyalty",
+    appName: "Loyalty Bridge",
     nepalWorldwide: "Nepal & Worldwide B2B2C",
     customerDashboard: "Customer Loyalty Wallet",
     businessPanel: "Merchant Partner Panel",
@@ -87,7 +87,7 @@ export const translations: TranslationsMap = {
     topEngagedMerchants: "Outstanding Partner Engagement Leagues"
   },
   ne: {
-    appName: "रेमिक्स लोयल्टी",
+    appName: "लोयल्टी ब्रिज",
     nepalWorldwide: "नेपाल र विश्वव्यापी B2B2C",
     customerDashboard: "ग्राहक लोयल्टी वालेट",
     businessPanel: "मर्चेन्ट पार्टनर प्यानल",
@@ -168,7 +168,7 @@ export const translations: TranslationsMap = {
     topEngagedMerchants: "उत्कृष्ट मर्चेन्ट पार्टनरहरू"
   },
   hi: {
-    appName: "रेमिक्स लॉयल्टी",
+    appName: "लॉयल्टी ब्रिज",
     nepalWorldwide: "नेपाल और वैश्विक B2B2C",
     customerDashboard: "ग्राहक लॉयल्टी वॉलेट",
     businessPanel: "मर्चेंट पार्टनर पैनल",

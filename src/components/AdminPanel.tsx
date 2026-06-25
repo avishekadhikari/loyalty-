@@ -223,7 +223,7 @@ export default function AdminPanel({ db, onRefresh }: AdminPanelProps) {
             </div>
             <div>
               <h2 className="text-md font-extrabold tracking-tight font-display text-white">Admin System</h2>
-              <p className="text-[10px] text-rose-450 font-mono tracking-wider">REMIX Global Registry</p>
+              <p className="text-[10px] text-rose-450 font-mono tracking-wider">LOYALTY BRIDGE Global Registry</p>
             </div>
           </div>
  
