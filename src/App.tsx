@@ -226,21 +226,43 @@ export default function App() {
     }
   };
 
-  // Fetch full DB summary
+  // Fetch full DB summary with automatic retries on cold start
   const fetchDB = async (silent = false) => {
-    if (!silent) setIsLoading(true);
-    try {
-      const res = await fetch("/api/db");
-      if (!res.ok) throw new Error("Faulty response code from platform servers");
-      const data: AppDatabase = await res.json();
-      setDb(data);
-      setLoadError(null);
-    } catch (err: any) {
-      console.error("Database fetch failed:", err);
-      setLoadError("Server ledger unreachable. Ensure backend is running.");
-    } finally {
-      if (!silent) setIsLoading(false);
+    if (!silent && !db) setIsLoading(true);
+    
+    const maxRetries = 4;
+    let attempt = 0;
+    
+    while (attempt < maxRetries) {
+      try {
+        const res = await fetch("/api/db");
+        if (!res.ok) throw new Error("Faulty response code from platform servers");
+        const data: AppDatabase = await res.json();
+        setDb(data);
+        setLoadError(null);
+        if (!silent) setIsLoading(false);
+        return;
+      } catch (err: any) {
+        attempt++;
+        console.warn(`Database fetch attempt ${attempt} failed:`, err);
+        
+        // If it's a silent/background poll, or if we already have data, don't block the UI or retry aggressively
+        if (silent || db) {
+          if (!silent) setIsLoading(false);
+          return;
+        }
+        
+        // Wait before retrying
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+      }
     }
+    
+    if (!db) {
+      setLoadError("Server ledger unreachable. Ensure backend is running.");
+    }
+    if (!silent) setIsLoading(false);
   };
 
   // Initial load & Poll
