@@ -7,6 +7,7 @@ import {
 import { AppDatabase, Business, CustomerBusinessRelation, NotificationMsg } from "../types";
 import { translations } from "../translations";
 import jsQR from "jsqr";
+import { motion, AnimatePresence } from "motion/react";
 
 interface CustomerPanelProps {
   db: AppDatabase;
@@ -449,8 +450,152 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
     return rel && rel.optInNotifications;
   });
 
+  const [knownNotifIds, setKnownNotifIds] = useState<string[]>([]);
+  const [activePopupNotif, setActivePopupNotif] = useState<NotificationMsg | null>(null);
+
+  // Play a beautiful, elegant synthetic mobile notification tone using Web Audio API
+  const playChime = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      
+      // Tone 1: warm chime
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc1.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
+      
+      gain1.gain.setValueAtTime(0.06, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+      
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start();
+      osc1.stop(ctx.currentTime + 0.6);
+
+      // Tone 2: secondary staggered chime
+      setTimeout(() => {
+        try {
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.type = "sine";
+          osc2.frequency.setValueAtTime(880, ctx.currentTime); // A5
+          osc2.frequency.exponentialRampToValueAtTime(1174.66, ctx.currentTime + 0.15); // D6
+          
+          gain2.gain.setValueAtTime(0.04, ctx.currentTime);
+          gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+          
+          osc2.connect(gain2);
+          gain2.connect(ctx.destination);
+          osc2.start();
+          osc2.stop(ctx.currentTime + 0.5);
+        } catch (e) {
+          // ignore context errors
+        }
+      }, 80);
+    } catch (e) {
+      console.warn("Web Audio chime could not play:", e);
+    }
+  };
+
+  // Reset tracking when active customer identity changes
+  useEffect(() => {
+    setKnownNotifIds([]);
+    setActivePopupNotif(null);
+  }, [customerId]);
+
+  // Sync and capture newly received notifications
+  useEffect(() => {
+    const currentIds = customerNotifs.map(n => n.id);
+    
+    // First load/mount: populate the known IDs so they do not trigger retroactively
+    if (knownNotifIds.length === 0 && customerNotifs.length > 0) {
+      setKnownNotifIds(currentIds);
+      return;
+    }
+
+    // Detect if any new notifications appeared that aren't in our known list
+    const unseenNotifs = customerNotifs.filter(n => !knownNotifIds.includes(n.id));
+    if (unseenNotifs.length > 0) {
+      // Pick the latest one
+      const newest = unseenNotifs[0];
+      setActivePopupNotif(newest);
+      playChime();
+      
+      // Update known list so we don't trigger again
+      setKnownNotifIds(prev => Array.from(new Set([...prev, ...currentIds])));
+    } else if (customerNotifs.length !== knownNotifIds.length) {
+      // Ensure we stay in sync if notifications are cleared or reorganized
+      setKnownNotifIds(currentIds);
+    }
+  }, [customerNotifs, knownNotifIds, customerId]);
+
+  // Auto-dismiss the popup banner after 7 seconds
+  useEffect(() => {
+    if (activePopupNotif) {
+      const timer = setTimeout(() => {
+        setActivePopupNotif(null);
+      }, 7000);
+      return () => clearTimeout(timer);
+    }
+  }, [activePopupNotif]);
+
   return (
-    <div id="customer-panel" className="max-w-md mx-auto glass-card min-h-[640px] shadow-2xl rounded-3xl overflow-hidden flex flex-col border border-white/10 text-white">
+    <div id="customer-panel" className="max-w-md mx-auto glass-card min-h-[640px] shadow-2xl rounded-3xl overflow-hidden flex flex-col border border-white/10 text-white relative">
+      
+      {/* Simulated System Push Notification Alert Banner Overlay */}
+      <AnimatePresence>
+        {activePopupNotif && (
+          <motion.div
+            initial={{ y: -100, opacity: 0, scale: 0.95 }}
+            animate={{ y: 12, opacity: 1, scale: 1 }}
+            exit={{ y: -100, opacity: 0, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 350, damping: 25 }}
+            onClick={() => {
+              setActiveTab("inbox");
+              setActivePopupNotif(null);
+            }}
+            className="absolute top-0 left-3 right-3 z-50 bg-slate-900/95 backdrop-blur-xl border border-white/15 rounded-2xl p-3.5 shadow-2xl shadow-black/80 cursor-pointer flex gap-3 select-none hover:bg-slate-850/95 transition-all duration-150"
+            id="mobile-push-notification-banner"
+          >
+            {/* App logo or category indicator */}
+            <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-black text-sm uppercase shadow-md border border-white/10">
+              {activePopupNotif.businessId === "system" ? "📢" : (db.businesses.find(b => b.id === activePopupNotif.businessId)?.logoUrl || "🎁")}
+            </div>
+
+            {/* Notification content */}
+            <div className="flex-1 min-w-0 text-left">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-300 font-mono">
+                  {activePopupNotif.businessId === "system" ? "Loyalty Bridge" : (db.businesses.find(b => b.id === activePopupNotif.businessId)?.name || "Loyalty Alert")}
+                </span>
+                <span className="text-[9px] text-slate-400 font-mono">now • 🔔</span>
+              </div>
+              <h4 className="text-xs font-black text-white mt-1 leading-snug truncate">
+                {activePopupNotif.title}
+              </h4>
+              <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed line-clamp-2">
+                {activePopupNotif.message}
+              </p>
+            </div>
+
+            {/* Manual Dismiss button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setActivePopupNotif(null);
+              }}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 self-start shrink-0 transition"
+              title="Dismiss alert"
+              id="btn-dismiss-push"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       {/* Visual mobile notched phone border simulation */}
       <div className="bg-white/5 text-white px-5 pt-3 pb-4 flex flex-col gap-2 rounded-t-2xl border-b border-white/5">
