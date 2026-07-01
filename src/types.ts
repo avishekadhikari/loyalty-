@@ -6,6 +6,23 @@ export interface SubscriptionPlan {
   prices: { [currencyCode: string]: number };
 }
 
+export interface PointsOffer {
+  id: string;
+  title: string;
+  pointsCost: number;
+  description: string;
+}
+
+export interface ClaimedCoupon {
+  id: string;
+  offerId: string;
+  title: string;
+  pointsCost: number;
+  claimedAt: string;
+  status: 'active' | 'redeemed';
+  redeemedAt?: string;
+}
+
 export interface Business {
   id: string;
   name: string;
@@ -32,6 +49,7 @@ export interface Business {
   notificationsSentThisMonth: number;
   pointsRate: number; // e.g., how many points per 1 unit of currency (e.g. 1 USD = 10 points)
   paymentRetries: number;
+  pointsOffers?: PointsOffer[]; // List of points coupons/rewards in their shop catalog
 }
 
 export interface Customer {
@@ -51,6 +69,7 @@ export interface CustomerBusinessRelation {
   lastStampAt: string | null;
   lastVisitAt: string;
   optInNotifications: boolean;
+  claimedCoupons?: ClaimedCoupon[]; // Active or redeemed coupons claimed using points
 }
 
 export interface PaymentTransaction {

@@ -72,7 +72,13 @@ const initialDatabase: AppDatabase = {
       extraQuota: 0,
       notificationsSentThisMonth: 1,
       pointsRate: 1, // 1 point per 1 NPR
-      paymentRetries: 0
+      paymentRetries: 0,
+      pointsOffers: [
+        { id: "kc-off-1", title: "Fresh Organic Americano", pointsCost: 50, description: "Enjoy a freshly brewed hot Americano from local organic coffee beans." },
+        { id: "kc-off-2", title: "Yak Milk Cappuccino", pointsCost: 100, description: "Our signature double-shot espresso topped with steamed local yak milk foam." },
+        { id: "kc-off-3", title: "Chocolate Fudge Brownie", pointsCost: 150, description: "A rich, gooey warm Belgian chocolate brownie topped with chocolate drizzle." },
+        { id: "kc-off-4", title: "French Press Pot & Muffin", pointsCost: 200, description: "A complete French press pot serving two, paired with any muffin of your choice." }
+      ]
     },
     {
       id: "himalayan-mountaineering",
@@ -98,7 +104,13 @@ const initialDatabase: AppDatabase = {
       extraQuota: 0,
       notificationsSentThisMonth: 8,
       pointsRate: 0.5, // 0.5 points per 1 NPR (e.g. 200 NPR = 100 points)
-      paymentRetries: 0
+      paymentRetries: 0,
+      pointsOffers: [
+        { id: "hm-off-1", title: "Heavy Duty Carabiner", pointsCost: 120, description: "A high-tensile, lightweight aluminum carabiner rated for professional climbing." },
+        { id: "hm-off-2", title: "Climbers Chalk Bag with Chalk", pointsCost: 250, description: "Ergonomic chalk bag pre-filled with premium moisture-absorbing magnesium carbonate chalk." },
+        { id: "hm-off-3", title: "Windproof Alpine Beanie", pointsCost: 400, description: "Thermoregulating merino wool beanie designed for severe high-altitude alpine weather." },
+        { id: "hm-off-4", title: "Gore-Tex Mountaineering Mittens", pointsCost: 800, description: "Sub-zero proof, fully insulated waterproof gloves with reinforced palms." }
+      ]
     },
     {
       id: "namche-bistro",
@@ -124,7 +136,12 @@ const initialDatabase: AppDatabase = {
       extraQuota: 0,
       notificationsSentThisMonth: 5, // reached quota limit also!
       pointsRate: 1,
-      paymentRetries: 3
+      paymentRetries: 3,
+      pointsOffers: [
+        { id: "nb-off-1", title: "Butter Tea Cup", pointsCost: 40, description: "Traditional salted Tibetan butter tea made with premium tea leaves and yak butter." },
+        { id: "nb-off-2", title: "Warm Apple Pie Slice", pointsCost: 100, description: "Freshly baked apple pie slice served hot with cinnamon and powdered sugar." },
+        { id: "nb-off-3", title: "Sherpa Stew (Shyakpa) Pot", pointsCost: 250, description: "A comforting bowl of thick, hand-pulled noodles with seasonal vegetables and broth." }
+      ]
     },
     {
       id: "london-tea",
@@ -150,7 +167,12 @@ const initialDatabase: AppDatabase = {
       extraQuota: 5, // Extra 5 pack bought
       notificationsSentThisMonth: 12,
       pointsRate: 10, // 10 points per GBP
-      paymentRetries: 0
+      paymentRetries: 0,
+      pointsOffers: [
+        { id: "lt-off-1", title: "Classic Earl Grey Pot", pointsCost: 60, description: "A premium loose-leaf Earl Grey tea pot brewed with real bergamot essence." },
+        { id: "lt-off-2", title: "Fruit Scone with Clotted Cream", pointsCost: 110, description: "Freshly baked fruit scone paired with devonshire clotted cream and strawberry jam." },
+        { id: "lt-off-3", title: "Royal High Tea Set", pointsCost: 300, description: "Our grand three-tier stand with finger sandwiches, warm scones, and sweet pastries." }
+      ]
     },
     {
       id: "tokyo-bento",
@@ -176,7 +198,13 @@ const initialDatabase: AppDatabase = {
       extraQuota: 0,
       notificationsSentThisMonth: 0,
       pointsRate: 10, // 10 points per 1 USD
-      paymentRetries: 0
+      paymentRetries: 0,
+      pointsOffers: [
+        { id: "tb-off-1", title: "Miso Soup & Edamame", pointsCost: 80, description: "Traditional soybean paste soup with tofu paired with seasoned, steamed edamame." },
+        { id: "tb-off-2", title: "California Roll (8pcs)", pointsCost: 200, description: "Classic roll filled with crab, avocado, and cucumber, topped with toasted sesame." },
+        { id: "tb-off-3", title: "Salmon & Tuna Sashimi Combo", pointsCost: 450, description: "Chef's selection of fresh, thick-cut raw Norwegian salmon and Pacific yellowfin tuna." },
+        { id: "tb-off-4", title: "Deluxe Bento Box", pointsCost: 750, description: "A full meal including chicken teriyaki, tempura shrimp, sushi roll, and seaweed salad." }
+      ]
     }
   ],
   customers: [
@@ -1132,6 +1160,273 @@ app.post("/api/business/update", async (req, res) => {
   } catch (err: any) {
     console.error("Business update error:", err);
     res.status(500).json({ error: "Failed to update merchant configuration details." });
+  }
+});
+
+// Add point coupon/menu offer
+app.post("/api/business/offers/add", async (req, res) => {
+  const { businessId, title, pointsCost, description } = req.body;
+  if (!businessId || !title || !pointsCost) {
+    return res.status(400).json({ error: "Missing required parameters: businessId, title, or pointsCost" });
+  }
+
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const biz = db.businesses.find(b => b.id === businessId);
+    if (!biz) {
+      return res.status(404).json({ error: "Business profile not found" });
+    }
+
+    if (!biz.pointsOffers) {
+      biz.pointsOffers = [];
+    }
+
+    const newOffer = {
+      id: `off-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      title,
+      pointsCost: parseInt(pointsCost),
+      description: description || ""
+    };
+
+    biz.pointsOffers.push(newOffer);
+    appendAuditLog(db, `Business (${biz.name})`, `Added new points menu coupon offer: "${title}" costing ${pointsCost} points`);
+    await saveDBToFirestore(db);
+    res.json({ success: true, offer: newOffer, pointsOffers: biz.pointsOffers });
+  } catch (err: any) {
+    console.error("Add offer failed:", err);
+    res.status(500).json({ error: "Failed to add point menu offer." });
+  }
+});
+
+// Delete point coupon/menu offer
+app.post("/api/business/offers/delete", async (req, res) => {
+  const { businessId, offerId } = req.body;
+  if (!businessId || !offerId) {
+    return res.status(400).json({ error: "Missing businessId or offerId" });
+  }
+
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const biz = db.businesses.find(b => b.id === businessId);
+    if (!biz) {
+      return res.status(404).json({ error: "Business profile not found" });
+    }
+
+    if (biz.pointsOffers) {
+      biz.pointsOffers = biz.pointsOffers.filter(o => o.id !== offerId);
+    }
+
+    appendAuditLog(db, `Business (${biz.name})`, `Deleted points coupon offer ID: ${offerId}`);
+    await saveDBToFirestore(db);
+    res.json({ success: true, pointsOffers: biz.pointsOffers || [] });
+  } catch (err: any) {
+    console.error("Delete offer failed:", err);
+    res.status(500).json({ error: "Failed to delete points coupon offer." });
+  }
+});
+
+// Customer spends points to claim/buy a coupon voucher (points as currency)
+app.post("/api/customer/coupon/claim", async (req, res) => {
+  const { customerId, businessId, offerId } = req.body;
+  if (!customerId || !businessId || !offerId) {
+    return res.status(400).json({ error: "Missing required parameters: customerId, businessId, and offerId" });
+  }
+
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const biz = db.businesses.find(b => b.id === businessId);
+    if (!biz) {
+      return res.status(404).json({ error: "Business profile not found" });
+    }
+
+    const offer = biz.pointsOffers?.find(o => o.id === offerId);
+    if (!offer) {
+      return res.status(404).json({ error: "The requested points reward offer was not found." });
+    }
+
+    const relId = `${customerId}_${businessId}`;
+    const rel = db.customer_business_relations.find(r => r.id === relId);
+    if (!rel) {
+      return res.status(403).json({ error: "You are not enrolled in this business's loyalty program." });
+    }
+
+    if (rel.pointsCount < offer.pointsCost) {
+      return res.status(400).json({ error: `Insufficient points balance. You need ${offer.pointsCost} points, but you have ${rel.pointsCount} points.` });
+    }
+
+    // Deduct points
+    rel.pointsCount -= offer.pointsCost;
+
+    // Initialize claimedCoupons if not exists
+    if (!rel.claimedCoupons) {
+      rel.claimedCoupons = [];
+    }
+
+    const couponId = `CPN-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const newCoupon = {
+      id: couponId,
+      offerId: offer.id,
+      title: offer.title,
+      pointsCost: offer.pointsCost,
+      claimedAt: new Date().toISOString(),
+      status: "active" as const
+    };
+
+    rel.claimedCoupons.unshift(newCoupon);
+
+    appendAuditLog(db, `Retail Customer (${customerId})`, `Spent ${offer.pointsCost} points to claim coupon "${offer.title}" (Code: ${couponId}) at ${biz.name}`);
+
+    // Create system notification for the inbox
+    const newNotif = {
+      id: `notif-claim-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      businessId: biz.id,
+      customerId: customerId,
+      title: `🎫 Coupon Claimed: ${offer.title}`,
+      message: `You spent ${offer.pointsCost} points and unlocked your "${offer.title}" coupon! Present code ${couponId} in-store to redeem it.`,
+      sentAt: new Date().toISOString(),
+      reachedCount: 1
+    };
+    db.notifications.unshift(newNotif);
+
+    await saveDBToFirestore(db);
+    res.json({ success: true, pointsCount: rel.pointsCount, coupon: newCoupon });
+  } catch (err: any) {
+    console.error("Claim coupon failed:", err);
+    res.status(500).json({ error: "Failed to claim reward coupon." });
+  }
+});
+
+// Business redeems/validates a customer's claimed active coupon voucher
+app.post("/api/business/coupon/redeem", async (req, res) => {
+  const { businessId, couponId } = req.body;
+  if (!businessId || !couponId) {
+    return res.status(400).json({ error: "Missing required parameters: businessId or couponId" });
+  }
+
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const biz = db.businesses.find(b => b.id === businessId);
+    if (!biz) {
+      return res.status(404).json({ error: "Business profile not found" });
+    }
+
+    // Search relationships to locate coupon
+    let foundRel = null;
+    let foundCoupon = null;
+
+    for (const rel of db.customer_business_relations) {
+      if (rel.businessId === businessId && rel.claimedCoupons) {
+        const c = rel.claimedCoupons.find(coupon => coupon.id === couponId);
+        if (c) {
+          foundRel = rel;
+          foundCoupon = c;
+          break;
+        }
+      }
+    }
+
+    if (!foundCoupon || !foundRel) {
+      return res.status(404).json({ error: "Coupon voucher code not found or does not belong to your store." });
+    }
+
+    if (foundCoupon.status === "redeemed") {
+      return res.status(400).json({ error: "This coupon voucher code has already been redeemed/used." });
+    }
+
+    // Mark as redeemed
+    foundCoupon.status = "redeemed";
+    foundCoupon.redeemedAt = new Date().toISOString();
+
+    appendAuditLog(db, `Business (${biz.name})`, `Redeemed customer's coupon voucher "${foundCoupon.title}" (Code: ${couponId})`);
+
+    // Create system notification for customer
+    const newNotif = {
+      id: `notif-redeem-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      businessId: biz.id,
+      customerId: foundRel.customerId,
+      title: `✅ Coupon Redeemed!`,
+      message: `Your coupon for "${foundCoupon.title}" (Code: ${couponId}) was successfully redeemed at ${biz.name}. Enjoy your food!`,
+      sentAt: new Date().toISOString(),
+      reachedCount: 1
+    };
+    db.notifications.unshift(newNotif);
+
+    await saveDBToFirestore(db);
+    res.json({ success: true, coupon: foundCoupon });
+  } catch (err: any) {
+    console.error("Redeem coupon failed:", err);
+    res.status(500).json({ error: "Failed to redeem reward coupon." });
+  }
+});
+
+// Business directly redeems points from customer's wallet for an offer
+app.post("/api/business/points/redeem-direct", async (req, res) => {
+  const { businessId, customerId, offerId } = req.body;
+  if (!businessId || !customerId || !offerId) {
+    return res.status(400).json({ error: "Missing required parameters: businessId, customerId, or offerId" });
+  }
+
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const biz = db.businesses.find(b => b.id === businessId);
+    if (!biz) {
+      return res.status(404).json({ error: "Business profile not found" });
+    }
+
+    const offer = biz.pointsOffers?.find(o => o.id === offerId);
+    if (!offer) {
+      return res.status(404).json({ error: "Point menu offer not found." });
+    }
+
+    const relId = `${customerId}_${businessId}`;
+    const rel = db.customer_business_relations.find(r => r.id === relId);
+    if (!rel) {
+      return res.status(404).json({ error: "Customer enrollment relationship not found." });
+    }
+
+    if (rel.pointsCount < offer.pointsCost) {
+      return res.status(400).json({ error: `Insufficient points. Customer has ${rel.pointsCount} points, but needs ${offer.pointsCost} points.` });
+    }
+
+    // Deduct points directly
+    rel.pointsCount -= offer.pointsCost;
+
+    if (!rel.claimedCoupons) {
+      rel.claimedCoupons = [];
+    }
+
+    const couponId = `DIR-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const directCoupon = {
+      id: couponId,
+      offerId: offer.id,
+      title: offer.title,
+      pointsCost: offer.pointsCost,
+      claimedAt: new Date().toISOString(),
+      status: "redeemed" as const,
+      redeemedAt: new Date().toISOString()
+    };
+
+    rel.claimedCoupons.unshift(directCoupon);
+
+    appendAuditLog(db, `Business (${biz.name})`, `Directly redeemed ${offer.pointsCost} points from customer (${customerId}) for "${offer.title}"`);
+
+    // Create system notification for customer
+    const newNotif = {
+      id: `notif-direct-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      businessId: biz.id,
+      customerId: customerId,
+      title: `🎁 Point Redemption Confirmed`,
+      message: `${biz.name} directly redeemed ${offer.pointsCost} points from your loyalty balance for "${offer.title}". Enjoy!`,
+      sentAt: new Date().toISOString(),
+      reachedCount: 1
+    };
+    db.notifications.unshift(newNotif);
+
+    await saveDBToFirestore(db);
+    res.json({ success: true, pointsCount: rel.pointsCount, coupon: directCoupon });
+  } catch (err: any) {
+    console.error("Direct point redemption failed:", err);
+    res.status(500).json({ error: "Failed to directly redeem customer points." });
   }
 });
 

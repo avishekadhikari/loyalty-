@@ -46,6 +46,14 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
   // Settle Payment Simulator parameters
   const [esewaAuthPhone, setEsewaAuthPhone] = useState("9861774000"); // Standard testing number from instruction
 
+  // Points Offer Management state (points as currency)
+  const [offerTitle, setOfferTitle] = useState("");
+  const [offerCost, setOfferCost] = useState("");
+  const [offerDesc, setOfferDesc] = useState("");
+  
+  // Redeem Coupon Code state
+  const [redeemCouponId, setRedeemCouponId] = useState("");
+
   // Get active business context
   const activeBiz = db.businesses.find(b => b.id === businessId);
   const enrolledRelations = db.customer_business_relations.filter(r => r.businessId === businessId);
@@ -151,6 +159,113 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
       }
     } catch (err) {
       showBanner(false, "Server update error");
+    }
+  };
+
+  // Add Point Menu Catalog offer
+  const handleAddOffer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!offerTitle || !offerCost) {
+      showBanner(false, "Voucher item title and point cost parameters are required!");
+      return;
+    }
+    try {
+      const response = await fetch("/api/business/offers/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessId,
+          title: offerTitle,
+          pointsCost: parseInt(offerCost),
+          description: offerDesc
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        showBanner(true, `Successfully added Points Offer "${offerTitle}"!`);
+        setOfferTitle("");
+        setOfferCost("");
+        setOfferDesc("");
+        onRefresh();
+      } else {
+        showBanner(false, data.error || "Failed to add offer");
+      }
+    } catch (e) {
+      showBanner(false, "Network error adding points menu item");
+    }
+  };
+
+  // Delete Point Menu Catalog offer
+  const handleDeleteOffer = async (offerId: string) => {
+    if (!window.confirm("Are you sure you want to delete this catalog points reward?")) return;
+    try {
+      const response = await fetch("/api/business/offers/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, offerId })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        showBanner(true, "Points offer successfully deleted from your catalog.");
+        onRefresh();
+      } else {
+        showBanner(false, data.error || "Failed to delete offer");
+      }
+    } catch (e) {
+      showBanner(false, "Network error deleting points offer");
+    }
+  };
+
+  // Redeem Customer Coupon code
+  const handleRedeemCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!redeemCouponId) {
+      showBanner(false, "Please enter a coupon voucher code first!");
+      return;
+    }
+    try {
+      const response = await fetch("/api/business/coupon/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, couponId: redeemCouponId.trim().toUpperCase() })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        showBanner(true, `SUCCESS! Redeemed Voucher Code "${redeemCouponId}": Unlocked "${data.coupon.title}" (Cost: ${data.coupon.pointsCost} points). Enjoy!`);
+        setRedeemCouponId("");
+        onRefresh();
+      } else {
+        showBanner(false, data.error || "Failed to redeem coupon code.");
+      }
+    } catch (e) {
+      showBanner(false, "Network error validating coupon code");
+    }
+  };
+
+  // Directly spend points from customer's wallet (direct cashier redemption)
+  const handleDirectRedeemPoints = async (customerId: string, offerId: string) => {
+    const biz = db.businesses.find(b => b.id === businessId);
+    const offer = biz?.pointsOffers?.find(o => o.id === offerId);
+    const cust = db.customers.find(c => c.id === customerId);
+    if (!offer || !cust) return;
+
+    if (!window.confirm(`Are you sure you want to directly spend ${offer.pointsCost} points from ${cust.name}'s balance to redeem "${offer.title}"?`)) return;
+
+    try {
+      const response = await fetch("/api/business/points/redeem-direct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, customerId, offerId })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        showBanner(true, `Direct redemption successful! Deducted ${offer.pointsCost} points from ${cust.name}'s account for "${offer.title}". Remaining points: ${data.pointsCount}`);
+        onRefresh();
+      } else {
+        showBanner(false, data.error || "Failed to directly redeem points.");
+      }
+    } catch (e) {
+      showBanner(false, "Network connection error redeeming points directly");
     }
   };
 
@@ -697,6 +812,39 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
               </div>
             )}
 
+            {/* Cashier Voucher Code Redemption desk */}
+            {activeBiz && activeBiz.loyaltyMode === "point" && (
+              <div className="glass-panel rounded-3xl p-6 border border-amber-500/25 bg-[#121625]/80 shadow-xl space-y-4 animate-fadeIn" id="cashier-redemption-desk">
+                <div className="border-b border-white/5 pb-2.5 flex items-center gap-2">
+                  <div className="bg-amber-500 text-slate-950 p-1.5 rounded-xl text-xs font-black">🎟️</div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-white uppercase tracking-widest font-display">
+                      Cashier Coupon Redemption Desk
+                    </h3>
+                    <p className="text-[11px] text-slate-355">Redeem claimed customer food/drink vouchers instantly by inputting their unique coupon code.</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleRedeemCoupon} className="flex gap-3 text-xs max-w-lg">
+                  <input
+                    type="text"
+                    placeholder="Enter Coupon Code (e.g., CPN-X9F4B)"
+                    value={redeemCouponId}
+                    onChange={(e) => setRedeemCouponId(e.target.value)}
+                    className="flex-1 glass-input text-white p-3 rounded-xl border border-white/10 font-mono text-center text-sm font-black tracking-widest uppercase bg-slate-950/40 focus:border-amber-400 focus:outline-none"
+                    id="cashier-redeem-input"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-5 rounded-xl border border-amber-400 cursor-pointer shadow-md shadow-amber-500/10 uppercase tracking-wider"
+                    id="cashier-redeem-submit-btn"
+                  >
+                    Redeem Code ➔
+                  </button>
+                </form>
+              </div>
+            )}
+
             {/* Business self registration section */}
             <div className="glass-panel rounded-3xl p-6 border border-white/10 shadow-lg space-y-4">
               <div className="border-b border-white/5 pb-3">
@@ -970,6 +1118,104 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
                 </button>
               </div>
             </form>
+
+            {activeBiz.loyaltyMode === "point" && (
+              <div className="mt-8 pt-6 border-t border-white/10 space-y-6">
+                <div className="border-b border-white/5 pb-2">
+                  <h3 className="text-sm font-extrabold text-white uppercase tracking-widest flex items-center gap-1.5 font-display text-indigo-300">
+                    🍽️ Points Currency Catalog Setup
+                  </h3>
+                  <p className="text-xs text-slate-350 mt-1">Designate individual menu food items or gifts that customers can purchase using their points as a currency (certain points = item).</p>
+                </div>
+
+                {/* Add new catalog offer form */}
+                <form onSubmit={handleAddOffer} className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white/5 p-4 rounded-2xl border border-white/10 text-xs text-white">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Menu Item / Reward Title</label>
+                    <input
+                      type="text"
+                      placeholder="E.g., Butter Chicken momo"
+                      value={offerTitle}
+                      onChange={(e) => setOfferTitle(e.target.value)}
+                      className="w-full glass-input text-white border border-white/10 rounded-xl p-2.5 font-bold focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Points Cost (Price in Points)</label>
+                    <input
+                      type="number"
+                      placeholder="E.g., 150"
+                      value={offerCost}
+                      onChange={(e) => setOfferCost(e.target.value)}
+                      className="w-full glass-input text-white border border-white/10 rounded-xl p-2.5 font-bold focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] text-slate-400 uppercase font-extrabold block">Description (Short note)</label>
+                    <input
+                      type="text"
+                      placeholder="E.g., Delicious plate of 10 momos"
+                      value={offerDesc}
+                      onChange={(e) => setOfferDesc(e.target.value)}
+                      className="w-full glass-input text-white border border-white/10 rounded-xl p-2.5 focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="md:col-span-3 flex justify-end">
+                    <button
+                      type="submit"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" /> Add Menu Currency Offer
+                    </button>
+                  </div>
+                </form>
+
+                {/* Current offerings table list */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-355">Current Active points Currency Offers:</h4>
+                  <div className="overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/20">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-white/5 border-b border-white/10 text-slate-400 text-[10px] uppercase font-mono">
+                          <th className="p-3">Title</th>
+                          <th className="p-3 text-center">Points Cost</th>
+                          <th className="p-3">Description</th>
+                          <th className="p-3 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {(activeBiz.pointsOffers || []).map(offer => (
+                          <tr key={offer.id} className="hover:bg-white/3" id={`mgr-offer-row-${offer.id}`}>
+                            <td className="p-3 font-bold text-white">{offer.title}</td>
+                            <td className="p-3 text-center">
+                              <span className="bg-amber-400/10 text-amber-300 font-bold px-2 py-0.5 rounded font-mono text-[11px]">
+                                🪙 {offer.pointsCost} pts
+                              </span>
+                            </td>
+                            <td className="p-3 text-slate-350">{offer.description || "-"}</td>
+                            <td className="p-3 text-right">
+                              <button
+                                onClick={() => handleDeleteOffer(offer.id)}
+                                className="text-[10px] bg-red-650/10 text-red-300 border border-red-500/15 hover:bg-red-600/25 px-2.5 py-1 rounded-lg font-bold transition cursor-pointer"
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {(activeBiz.pointsOffers || []).length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="p-6 text-center italic text-slate-500">
+                              Your menu points catalog is empty. Setup some dishes/rewards to allow point redemption as a currency!
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1010,7 +1256,8 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
                         <th className="p-3.5">Points Card Balance</th>
                         <th className="p-3.5">Stamps Balance</th>
                         <th className="p-3.5">Opt-In Alerts Feed</th>
-                        <th className="p-3.5 pr-5">Last Transaction Visit</th>
+                        <th className="p-3.5">Last Transaction Visit</th>
+                        <th className="p-3.5 pr-5">Direct Point Redeem (Cashier)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -1033,8 +1280,45 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
                                 {rel.optInNotifications ? "Enabled Alerts" : "Muted"}
                               </span>
                             </td>
-                            <td className="p-3.5 pr-5 text-slate-400 font-mono text-[11px]">
+                            <td className="p-3.5 text-slate-400 font-mono text-[11px]">
                               {rel.lastVisitAt ? new Date(rel.lastVisitAt).toLocaleString() : "Never"}
+                            </td>
+                            <td className="p-3.5 pr-5">
+                              {activeBiz?.loyaltyMode === "point" ? (
+                                <div className="flex items-center gap-1.5" id={`direct-redeem-row-${rel.customerId}`}>
+                                  <select
+                                    id={`select-offer-${rel.customerId}`}
+                                    className="bg-[#0c0e14] border border-white/15 text-[11px] rounded p-1 text-slate-200 outline-none max-w-[120px] font-bold"
+                                    defaultValue=""
+                                  >
+                                    <option value="" disabled>Select food...</option>
+                                    {(activeBiz.pointsOffers || []).map(offer => {
+                                      const disabled = rel.pointsCount < offer.pointsCost;
+                                      return (
+                                        <option key={offer.id} value={offer.id} disabled={disabled} className="bg-[#0c0e14] text-white">
+                                          {offer.title} ({offer.pointsCost}p) {disabled ? '❌' : '✓'}
+                                        </option>
+                                      );
+                                    })}
+                                  </select>
+                                  <button
+                                    onClick={() => {
+                                      const select = document.getElementById(`select-offer-${rel.customerId}`) as HTMLSelectElement;
+                                      if (select && select.value) {
+                                        handleDirectRedeemPoints(rel.customerId, select.value);
+                                        select.value = ""; // reset
+                                      } else {
+                                        showBanner(false, "Please select a menu food item to redeem first!");
+                                      }
+                                    }}
+                                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] px-2 py-1 rounded transition border border-amber-400 cursor-pointer shadow"
+                                  >
+                                    Redeem 🍽️
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-slate-500 italic text-[11px]">No direct points actions</span>
+                              )}
                             </td>
                           </tr>
                         );

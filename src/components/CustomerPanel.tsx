@@ -428,6 +428,34 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
     }
   };
 
+  const [claimStatus, setClaimStatus] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Spend points to claim coupon (use points as currency)
+  const handleClaimCoupon = async (bizId: string, offerId: string) => {
+    setClaimStatus(null);
+    try {
+      const response = await fetch("/api/customer/coupon/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId, businessId: bizId, offerId })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setClaimStatus({ success: true, message: `Successfully claimed "${data.coupon.title}"! Voucher code: ${data.coupon.id}` });
+        onRefresh();
+        playChime();
+        setTimeout(() => setClaimStatus(null), 8000);
+      } else {
+        setClaimStatus({ success: false, message: data.error || "Failed to claim coupon." });
+        setTimeout(() => setClaimStatus(null), 5000);
+      }
+    } catch (e) {
+      console.error(e);
+      setClaimStatus({ success: false, message: "Network connection error claiming coupon" });
+      setTimeout(() => setClaimStatus(null), 5000);
+    }
+  };
+
   // Cooldown helper
   const getStampCooldown = (lastStampAt: string | null) => {
     if (!lastStampAt) return { canStampId: true, text: "" };
@@ -858,9 +886,104 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
                     )}
 
                     {!isStampMode && (
-                      <div className="mt-3 pt-2.5 border-t border-white/5 flex justify-between items-center text-[10px] text-slate-400 font-mono">
-                        <span>1 {b.operatingCurrency} = {b.pointsRate} Points</span>
-                        <span>Symbol: {getCurrencySymbol(b.operatingCurrency)}</span>
+                      <div className="mt-3.5 pt-3.5 border-t border-white/5 space-y-3 text-left">
+                        <div className="flex justify-between items-center">
+                          <h4 className="text-xs font-black uppercase tracking-wider text-indigo-300 font-mono flex items-center gap-1">
+                            <span>🪙 Spend Points on Menu</span>
+                          </h4>
+                          <span className="text-[10px] text-slate-400 font-mono">1 {b.operatingCurrency} = {b.pointsRate} Pts</span>
+                        </div>
+                        
+                        {/* Menu points items catalogue */}
+                        <div className="grid gap-2 max-h-[220px] overflow-y-auto pr-1">
+                          {(b.pointsOffers || []).map(offer => {
+                            const canAfford = relation.pointsCount >= offer.pointsCost;
+                            return (
+                              <div key={offer.id} className="p-2 rounded-xl bg-[#0e111a] border border-white/5 flex justify-between items-center gap-2 hover:border-white/10 transition-all" id={`offer-card-${offer.id}`}>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] font-extrabold text-white truncate">{offer.title}</span>
+                                    <span className="shrink-0 bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[9px] font-black px-1.5 py-0.2 rounded-full font-mono flex items-center gap-0.5">
+                                      🪙 {offer.pointsCost}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 truncate mt-0.5">{offer.description}</p>
+                                </div>
+                                <button
+                                  onClick={() => handleClaimCoupon(b.id, offer.id)}
+                                  disabled={!canAfford || isSuspended}
+                                  className={`shrink-0 text-[10px] font-black px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                                    canAfford && !isSuspended
+                                      ? "bg-amber-500 hover:bg-amber-600 text-slate-950 border-amber-400 font-extrabold shadow-sm shadow-amber-500/20 animate-pulse"
+                                      : "bg-slate-900 text-slate-500 border-white/5 cursor-not-allowed"
+                                  }`}
+                                  id={`btn-claim-${offer.id}`}
+                                >
+                                  Claim Vouch 🎟️
+                                </button>
+                              </div>
+                            );
+                          })}
+                          {(b.pointsOffers || []).length === 0 && (
+                            <p className="text-[10px] text-slate-500 italic text-center">No catalog offers loaded. Check back later!</p>
+                          )}
+                        </div>
+
+                        {/* Claim Status toast box inline */}
+                        {claimStatus && (
+                          <div className={`p-2.5 rounded-xl text-xs border font-medium ${
+                            claimStatus.success
+                              ? "bg-emerald-550/15 text-emerald-300 border-emerald-500/30"
+                              : "bg-red-550/15 text-red-300 border-red-550/30"
+                          }`} id="coupon-claim-toast-box">
+                            {claimStatus.message}
+                          </div>
+                        )}
+
+                        {/* Claimed/Active Coupons section */}
+                        {relation.claimedCoupons && relation.claimedCoupons.filter(c => c.status === 'active').length > 0 && (
+                          <div className="mt-3.5 pt-3.5 border-t border-dashed border-white/10 space-y-2">
+                            <h5 className="text-[10px] font-black uppercase tracking-wider text-amber-400 font-mono">My Active Unused Vouchers ({relation.claimedCoupons.filter(c => c.status === 'active').length})</h5>
+                            <div className="space-y-1.5">
+                              {relation.claimedCoupons.filter(c => c.status === 'active').map(coupon => (
+                                <div key={coupon.id} className="p-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-indigo-500/5 border border-amber-500/25 flex flex-col gap-1.5 shadow-sm" id={`claimed-coupon-${coupon.id}`}>
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                                      <span>🎁 {coupon.title}</span>
+                                    </span>
+                                    <span className="bg-amber-400 text-slate-950 text-[10px] font-mono font-black px-1.5 py-0.2 rounded border border-amber-300">
+                                      {coupon.id}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center text-[9px] text-slate-400 font-mono">
+                                    <span>Claimed {new Date(coupon.claimedAt).toLocaleDateString()}</span>
+                                    <span className="text-emerald-400 font-bold animate-pulse">● SHOW IN-STORE TO REDEEM</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Coupon History section */}
+                        {relation.claimedCoupons && relation.claimedCoupons.filter(c => c.status === 'redeemed').length > 0 && (
+                          <div className="mt-2 text-left">
+                            <details className="cursor-pointer group">
+                              <summary className="text-[9px] text-slate-500 font-bold uppercase hover:text-slate-400 select-none outline-none list-none flex items-center gap-1">
+                                <span>📜 View Used Vouchers History ({relation.claimedCoupons.filter(c => c.status === 'redeemed').length})</span>
+                                <span className="group-open:rotate-180 transition-transform duration-100">▼</span>
+                              </summary>
+                              <div className="space-y-1 mt-1.5 pl-1.5 border-l border-white/5">
+                                {relation.claimedCoupons.filter(c => c.status === 'redeemed').map(coupon => (
+                                  <div key={coupon.id} className="text-[10px] flex justify-between items-center text-slate-400 py-0.5">
+                                    <span className="truncate max-w-[150px]">✔️ {coupon.title}</span>
+                                    <span className="font-mono text-[9px] text-slate-500 line-through">{coupon.id}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
