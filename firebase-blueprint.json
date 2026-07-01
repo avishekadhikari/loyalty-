@@ -84,6 +84,7 @@
       "properties": {
         "id": { "type": "string" },
         "businessId": { "type": "string" },
+        "customerId": { "type": "string" },
         "title": { "type": "string" },
         "message": { "type": "string" },
         "sentAt": { "type": "string", "format": "date-time" },

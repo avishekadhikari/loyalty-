@@ -888,6 +888,18 @@ app.post("/api/customer/stamp", async (req, res) => {
       rel.stampsCount = rel.stampsCount - business.stampRewardLimit; // recycle rest
       rewardAwarded = true;
       appendAuditLog(db, `Retail Customer (${customerId})`, `Claimed STAMP reward "${business.rewardDescription}" at ${business.name}`);
+      
+      // Auto-generate a loyalty completion notification for the customer
+      const newNotif: NotificationMsg = {
+        id: `notif-stamp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        businessId: business.id,
+        customerId: customerId,
+        title: `🎉 Stamp Loyalty Reward Unlocked!`,
+        message: `Congratulations! You have completed your stamp card at ${business.name} and unlocked your reward: "${business.rewardDescription}". Present your active card during your next visit to enjoy it!`,
+        sentAt: now.toISOString(),
+        reachedCount: 1
+      };
+      db.notifications.unshift(newNotif);
     } else {
       appendAuditLog(db, `Retail Customer (${customerId})`, `Scanned STAMP card at ${business.name} (Stamps total: ${rel.stampsCount})`);
     }
@@ -960,6 +972,19 @@ app.post("/api/customer/points", async (req, res) => {
       rel.pointsCount = rel.pointsCount % business.pointRewardLimit;
       rewardAwarded = true;
       appendAuditLog(db, `Retail Customer (${customerId})`, `Redeemed ${rewardsClaimed}x Loyalty Reward points for "${business.rewardDescription}" at ${business.name}`);
+      
+      // Auto-generate a loyalty completion notification for the customer
+      const qtyText = rewardsClaimed > 1 ? ` (${rewardsClaimed}x rewards earned!)` : "";
+      const newNotif: NotificationMsg = {
+        id: `notif-points-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        businessId: business.id,
+        customerId: customerId,
+        title: `🎁 Points Loyalty Reward Unlocked!`,
+        message: `Awesome job! You reached the points threshold at ${business.name} and earned your loyalty reward${qtyText}: "${business.rewardDescription}". Present your card or notifications next time to enjoy it!`,
+        sentAt: now.toISOString(),
+        reachedCount: 1
+      };
+      db.notifications.unshift(newNotif);
     } else {
       appendAuditLog(db, `Retail Customer (${customerId})`, `Earned ${points} points at ${business.name} (Price amount spent: ${business.operatingCurrency} ${amount})`);
     }

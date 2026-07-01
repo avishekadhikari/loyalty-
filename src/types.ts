@@ -67,6 +67,7 @@ export interface PaymentTransaction {
 export interface NotificationMsg {
   id: string;
   businessId: string; // 'system' for admin broadcast
+  customerId?: string; // Optional: specific customer recipient for personal loyalty alerts
   title: string;
   message: string;
   sentAt: string;

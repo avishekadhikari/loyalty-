@@ -442,6 +442,7 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
 
   // Customer notification filter
   const customerNotifs = db.notifications.filter(n => {
+    if (n.customerId && n.customerId !== customerId) return false;
     if (n.businessId === "system") return true; // System broadcasts
     // Only show if customer has relation AND has notifications enabled
     const rel = customerRelations.find(r => r.businessId === n.businessId);
