@@ -18,8 +18,15 @@ interface CustomerPanelProps {
 
 export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId }: CustomerPanelProps) {
   const [lang, setLang] = useState<"en" | "ne" | "hi">("en");
-  const [activeTab, setActiveTab] = useState<"wallet" | "scanner" | "inbox" | "directory">("wallet");
+  const [activeTab, setActiveTab] = useState<"wallet" | "scanner" | "inbox" | "directory" | "profile">("wallet");
   const [scannerMode, setScannerMode] = useState<"static" | "stamp" | "points">("static");
+
+  // Profile Form States
+  const [profileName, setProfileName] = useState("");
+  const [profileEmail, setProfileEmail] = useState("");
+  const [profileLanguage, setProfileLanguage] = useState("en");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileStatus, setProfileStatus] = useState<{ success: boolean; text: string } | null>(null);
   
   // Camera state hooks
   const [cameraActive, setCameraActive] = useState(false);
@@ -58,6 +65,51 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
   // Get customer object
   const currentCustomer = db.customers.find(c => c.id === customerId);
   const customerRelations = db.customer_business_relations.filter(r => r.customerId === customerId);
+
+  useEffect(() => {
+    if (currentCustomer) {
+      setProfileName(currentCustomer.name || "");
+      setProfileEmail(currentCustomer.email || "");
+      setProfileLanguage(currentCustomer.preferredLanguage || "en");
+    }
+  }, [currentCustomer, customerId]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profileName.trim()) {
+      setProfileStatus({ success: false, text: "Name cannot be empty." });
+      return;
+    }
+    setIsSavingProfile(true);
+    setProfileStatus(null);
+    try {
+      const response = await fetch("/api/customer/update-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId,
+          name: profileName.trim(),
+          email: profileEmail.trim(),
+          preferredLanguage: profileLanguage
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setProfileStatus({ success: true, text: "Your profile has been saved successfully!" });
+        onRefresh();
+        if (["en", "ne", "hi"].includes(profileLanguage)) {
+          setLang(profileLanguage as any);
+        }
+        setTimeout(() => setProfileStatus(null), 5000);
+      } else {
+        setProfileStatus({ success: false, text: data.error || "Failed to update profile." });
+      }
+    } catch (err) {
+      setProfileStatus({ success: false, text: "Network connection error while saving profile." });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   // Multi-Currency Symbol helper
   const getCurrencySymbol = (currency: string) => {
@@ -737,6 +789,15 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
               </span>
             )}
           </button>
+          <button
+            id="tab-customer-profile"
+            onClick={() => setActiveTab("profile")}
+            className={`flex-1 py-2 text-[10px] font-bold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1 transition-all duration-150 cursor-pointer ${
+              activeTab === "profile" ? "glass-pill-active font-black shadow-sm text-white" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            👤 <span>Profile</span>
+          </button>
         </div>
 
         {/* ----------------- TAB: WALLET ----------------- */}
@@ -1408,6 +1469,120 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* ----------------- TAB: PROFILE SETTINGS ----------------- */}
+        {activeTab === "profile" && (
+          <div className="space-y-4">
+            <div className="bg-white/5 p-3.5 rounded-2xl border border-white/10">
+              <h3 className="text-xs font-extrabold text-indigo-300 uppercase tracking-wide flex items-center gap-1 font-mono">
+                👤 Personal Profile Settings
+              </h3>
+              <p className="text-[10px] text-slate-400 font-medium">Keep your identity and communication details updated across all stores.</p>
+            </div>
+
+            {profileStatus && (
+              <div className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${
+                profileStatus.success ? "bg-emerald-550/10 border border-emerald-500/20 text-emerald-300" : "bg-red-500/10 border border-red-500/20 text-red-200"
+              }`} id="profile-status-alert">
+                {profileStatus.success ? "✓" : "⚠"} {profileStatus.text}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveProfile} className="space-y-4 bg-slate-900/40 p-5 rounded-2xl border border-white/10 text-xs font-semibold text-white">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-450 uppercase font-extrabold block">My Name</label>
+                <input 
+                  type="text" 
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                  className="w-full glass-input p-2.5 text-xs text-white rounded-xl border border-white/10 font-bold bg-slate-950/20"
+                  placeholder="e.g. Sonam Dorjee"
+                  id="profile-input-name"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-450 uppercase font-extrabold block">Email Address</label>
+                <input 
+                  type="email" 
+                  value={profileEmail}
+                  onChange={(e) => setProfileEmail(e.target.value)}
+                  className="w-full glass-input p-2.5 text-xs text-white rounded-xl border border-white/10 font-bold bg-slate-950/20"
+                  placeholder="e.g. sonam@domain.com"
+                  id="profile-input-email"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-450 uppercase font-extrabold block">Preferred Language</label>
+                <select 
+                  value={profileLanguage}
+                  onChange={(e) => setProfileLanguage(e.target.value)}
+                  className="w-full bg-slate-950 p-2.5 text-xs text-white rounded-xl border border-white/10 font-bold"
+                  id="profile-select-language"
+                >
+                  <option value="en" className="bg-slate-950 text-white">English (EN)</option>
+                  <option value="ne" className="bg-slate-950 text-white">Nepali (नेपाली)</option>
+                  <option value="hi" className="bg-slate-950 text-white">Hindi (हिंदी)</option>
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSavingProfile}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs py-2.5 rounded-xl transition cursor-pointer shadow active:scale-[0.98]"
+                id="profile-btn-save"
+              >
+                {isSavingProfile ? "Saving changes..." : "Save Profile Settings"}
+              </button>
+            </form>
+
+            <div className="glass-panel rounded-2xl p-5 border border-white/10 space-y-4">
+              <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-widest font-mono">
+                🔔 Manage Notifications per Enrolled Business ({customerRelations.length})
+              </h3>
+              <p className="text-[10px] text-slate-400 leading-normal mt-1">Control which registered programs are authorized to push live broadcasts and claim alerts to this device.</p>
+              
+              <div className="space-y-2.5">
+                {customerRelations.length === 0 ? (
+                  <p className="text-xs text-slate-405 font-medium">You are not registered in any loyalty program yet.</p>
+                ) : (
+                  customerRelations.map(rel => {
+                    const b = db.businesses.find(x => x.id === rel.businessId);
+                    if (!b) return null;
+
+                    return (
+                      <div key={rel.id} className="p-3.5 bg-white/5 border border-white/10 rounded-xl flex justify-between items-center text-white">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-bold text-xs">
+                            {b.name.substring(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-white">{b.name}</h4>
+                            <p className="text-[9px] text-slate-400 font-mono">Status: Enrolled</p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => toggleNotification(rel.businessId, rel.optInNotifications)}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all cursor-pointer border ${
+                            rel.optInNotifications 
+                              ? "bg-emerald-550/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30" 
+                              : "bg-slate-800 text-slate-400 border-white/5 hover:bg-slate-750"
+                          }`}
+                          id={`toggle-notif-${b.id}`}
+                        >
+                          {rel.optInNotifications ? "✓ Opt-in: On" : "✕ Opt-in: Off"}
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
         )}

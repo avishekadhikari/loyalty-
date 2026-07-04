@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   Building, Settings, Users, Bell, DollarSign, Download, Plus, 
   RefreshCw, CheckCircle2, AlertTriangle, ShieldCheck, QrCode, FileSpreadsheet, ExternalLink,
-  BarChart3, Info, TrendingUp, Coins
+  BarChart3, Info, TrendingUp, Coins, X
 } from "lucide-react";
-import { AppDatabase, Business, CustomerBusinessRelation, PaymentTransaction } from "../types";
+import { AppDatabase, Business, CustomerBusinessRelation, PaymentTransaction, NotificationMsg } from "../types";
+import { motion, AnimatePresence } from "motion/react";
 
 interface BusinessPanelProps {
   db: AppDatabase;
@@ -59,6 +60,85 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
   const enrolledRelations = db.customer_business_relations.filter(r => r.businessId === businessId);
   const planOfBiz = activeBiz ? db.subscription_plans.find(p => p.id === activeBiz.planId) : null;
   const transactionsOfBiz = db.payment_transactions.filter(t => t.businessId === businessId);
+
+  // Merchant Notifications & Push Alerts Desk
+  const merchantNotifs = db.notifications.filter(n => n.businessId === businessId && n.isForMerchant === true);
+  const [knownNotifIds, setKnownNotifIds] = useState<string[]>([]);
+  const [activePopupNotif, setActivePopupNotif] = useState<NotificationMsg | null>(null);
+
+  const playChime = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(659.25, ctx.currentTime); // E5
+      osc1.frequency.exponentialRampToValueAtTime(987.77, ctx.currentTime + 0.15); // B5
+      
+      gain1.gain.setValueAtTime(0.06, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+      
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start();
+      osc1.stop(ctx.currentTime + 0.6);
+
+      setTimeout(() => {
+        try {
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.type = "sine";
+          osc2.frequency.setValueAtTime(987.77, ctx.currentTime); // B5
+          osc2.frequency.exponentialRampToValueAtTime(1318.51, ctx.currentTime + 0.15); // E6
+          
+          gain2.gain.setValueAtTime(0.04, ctx.currentTime);
+          gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+          
+          osc2.connect(gain2);
+          gain2.connect(ctx.destination);
+          osc2.start();
+          osc2.stop(ctx.currentTime + 0.5);
+        } catch (e) {}
+      }, 90);
+    } catch (e) {
+      console.warn("Web Audio chime failed to play for merchant:", e);
+    }
+  };
+
+  useEffect(() => {
+    setKnownNotifIds([]);
+    setActivePopupNotif(null);
+  }, [businessId]);
+
+  useEffect(() => {
+    const currentIds = merchantNotifs.map(n => n.id);
+    if (knownNotifIds.length === 0 && merchantNotifs.length > 0) {
+      setKnownNotifIds(currentIds);
+      return;
+    }
+
+    const unseenNotifs = merchantNotifs.filter(n => !knownNotifIds.includes(n.id));
+    if (unseenNotifs.length > 0) {
+      const newest = unseenNotifs[0];
+      setActivePopupNotif(newest);
+      playChime();
+      setKnownNotifIds(prev => Array.from(new Set([...prev, ...currentIds])));
+    } else if (merchantNotifs.length !== knownNotifIds.length) {
+      setKnownNotifIds(currentIds);
+    }
+  }, [merchantNotifs, knownNotifIds, businessId]);
+
+  useEffect(() => {
+    if (activePopupNotif) {
+      const timer = setTimeout(() => {
+        setActivePopupNotif(null);
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [activePopupNotif]);
 
   // Helpers
   const showBanner = (success: boolean, text: string) => {
@@ -419,7 +499,56 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
   const isSuspended = activeBiz?.status !== "active";
 
   return (
-    <div className="glass-card rounded-3xl overflow-hidden border border-white/10 flex flex-col lg:flex-row min-h-[600px] text-white">
+    <div className="glass-card rounded-3xl overflow-hidden border border-white/10 flex flex-col lg:flex-row min-h-[600px] text-white relative">
+      
+      {/* Real-time B2B Merchant Push Notification Alert Banner Overlay */}
+      <AnimatePresence>
+        {activePopupNotif && (
+          <motion.div
+            initial={{ y: -100, opacity: 0, scale: 0.95 }}
+            animate={{ y: 16, opacity: 1, scale: 1 }}
+            exit={{ y: -100, opacity: 0, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 350, damping: 25 }}
+            onClick={() => {
+              setActiveTab("broadcast");
+              setActivePopupNotif(null);
+            }}
+            className="absolute top-0 left-1/2 -translate-x-1/2 z-50 w-[90%] sm:w-[480px] bg-slate-900/95 backdrop-blur-xl border-2 border-amber-500/30 rounded-2xl p-4 shadow-2xl shadow-black/90 cursor-pointer flex gap-3 select-none hover:bg-slate-850/95 transition-all duration-150"
+            id="merchant-push-notification-banner"
+          >
+            <div className="w-11 h-11 shrink-0 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-white font-black text-lg shadow-md border border-white/10">
+              🔔
+            </div>
+
+            <div className="flex-1 min-w-0 text-left">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 font-mono">
+                  🚨 Real-time Redemption Alert
+                </span>
+                <span className="text-[9px] text-slate-400 font-mono font-sans">now • 🔔</span>
+              </div>
+              <h4 className="text-xs font-black text-white mt-1 leading-snug">
+                {activePopupNotif.title}
+              </h4>
+              <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                {activePopupNotif.message}
+              </p>
+            </div>
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setActivePopupNotif(null);
+              }}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 self-start shrink-0 transition"
+              title="Dismiss alert"
+              id="btn-dismiss-merchant-push"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       {/* 1. Sidebar Panel Management */}
       <div className="w-full lg:w-64 bg-white/5 border-r border-white/10 text-white p-4 flex flex-col justify-between shrink-0">
@@ -1410,14 +1539,46 @@ export default function BusinessPanel({ db, onRefresh, businessId, setBusinessId
               )}
             </div>
 
+            {/* Merchant Live Redemption Alerts Desk */}
+            <div className="glass-panel rounded-3xl p-6 border border-white/10 shadow-lg space-y-4">
+              <h3 className="text-xs font-extrabold text-amber-400 uppercase tracking-widest flex items-center gap-1.5 font-display">
+                <Bell className="w-4 h-4 text-amber-400 animate-pulse" /> Merchant Live Redemption & Reward Alerts Desk ({merchantNotifs.length})
+              </h3>
+              <p className="text-[11px] text-slate-300">These are real-time alerts pushed from customer devices when they claim coupon codes or unlock stamp/points rewards.</p>
+              
+              <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+                {merchantNotifs.length === 0 ? (
+                  <div className="p-6 bg-white/5 border border-white/5 rounded-2xl text-center text-xs text-slate-400">
+                    🔔 Waiting for customer transactions... No redemption alerts received yet.
+                  </div>
+                ) : (
+                  merchantNotifs.map(n => (
+                    <div key={n.id} className="p-3 bg-slate-950/40 border-l-4 border-l-amber-500 border-white/10 rounded-r-xl text-white flex justify-between items-start gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-amber-400 uppercase font-mono tracking-wider">[Live Alert]</span>
+                          <span className="text-[9px] text-slate-400 font-mono">{new Date(n.sentAt).toLocaleTimeString()}</span>
+                        </div>
+                        <h4 className="text-xs font-extrabold text-white mt-1 leading-snug">{n.title}</h4>
+                        <p className="text-[11px] text-slate-300 leading-normal mt-1 max-w-[480px] font-sans">{n.message}</p>
+                      </div>
+                      <span className="shrink-0 bg-amber-500/15 text-amber-300 border border-amber-500/25 text-[9px] px-2 py-0.5 rounded uppercase font-mono font-bold tracking-wider">
+                        Pending Verify
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
             {/* List past announcements */}
             <div className="glass-panel rounded-3xl p-6 border border-white/10 shadow-lg space-y-4">
-              <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">Broadcast Logs History ({db.notifications.filter(x => x.businessId === businessId).length})</h3>
+              <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">Broadcast Logs History ({db.notifications.filter(x => x.businessId === businessId && !x.isForMerchant).length})</h3>
               <div className="space-y-2.5">
-                {db.notifications.filter(x => x.businessId === businessId).length === 0 ? (
+                {db.notifications.filter(x => x.businessId === businessId && !x.isForMerchant).length === 0 ? (
                   <p className="text-xs text-slate-405 font-medium">No prior notifications sent from this account.</p>
                 ) : (
-                  db.notifications.filter(x => x.businessId === businessId).map(n => (
+                  db.notifications.filter(x => x.businessId === businessId && !x.isForMerchant).map(n => (
                     <div key={n.id} className="p-3 bg-white/5 border border-white/10 rounded-2xl flex justify-between items-center text-white">
                       <div>
                         <h4 className="text-xs font-bold text-white">{n.title}</h4>

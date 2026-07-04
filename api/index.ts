@@ -804,6 +804,43 @@ app.post("/api/customer/register", async (req, res) => {
   }
 });
 
+// Update customer profile (name, email, preferred language, notifications)
+app.post("/api/customer/update-profile", async (req, res) => {
+  const { customerId, name, email, preferredLanguage, notifications } = req.body;
+  if (!customerId) {
+    return res.status(400).json({ error: "Missing customerId parameter" });
+  }
+
+  try {
+    const db = await fetchFullDBFromFirestore();
+    const customer = db.customers.find(c => c.id === customerId);
+    if (!customer) {
+      return res.status(404).json({ error: "Customer profile not found" });
+    }
+
+    if (name !== undefined) customer.name = name.trim();
+    if (email !== undefined) customer.email = email.trim();
+    if (preferredLanguage !== undefined) customer.preferredLanguage = preferredLanguage;
+
+    if (notifications && typeof notifications === "object") {
+      Object.keys(notifications).forEach(bizId => {
+        const relId = `${customerId}_${bizId}`;
+        const rel = db.customer_business_relations.find(r => r.id === relId);
+        if (rel) {
+          rel.optInNotifications = !!notifications[bizId];
+        }
+      });
+    }
+
+    appendAuditLog(db, `Customer (${customer.name})`, `Updated customer profile settings (Language: ${customer.preferredLanguage || "en"})`);
+    await saveDBToFirestore(db);
+    res.json({ success: true, customer });
+  } catch (err: any) {
+    console.error("Customer profile update failed:", err);
+    res.status(500).json({ error: "Failed to update customer profile settings." });
+  }
+});
+
 app.post("/api/customer/enroll", async (req, res) => {
   const { customerId, businessId, customerName, customerEmail, customerPhone } = req.body;
   if (!customerId || !businessId) {
@@ -917,6 +954,9 @@ app.post("/api/customer/stamp", async (req, res) => {
       rewardAwarded = true;
       appendAuditLog(db, `Retail Customer (${customerId})`, `Claimed STAMP reward "${business.rewardDescription}" at ${business.name}`);
       
+      const customerObj = db.customers.find(c => c.id === customerId);
+      const custName = customerObj?.name || customerId;
+
       // Auto-generate a loyalty completion notification for the customer
       const newNotif: NotificationMsg = {
         id: `notif-stamp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -928,6 +968,18 @@ app.post("/api/customer/stamp", async (req, res) => {
         reachedCount: 1
       };
       db.notifications.unshift(newNotif);
+
+      // Push notification to the merchant too informing which customer just redeemed it
+      const merchantNotif: NotificationMsg = {
+        id: `notif-merchant-stamp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        businessId: business.id,
+        title: `🚨 Stamp Reward Unlocked!`,
+        message: `Customer ${custName} (${customerId}) completed their stamp card and unlocked their reward: "${business.rewardDescription}". Verify and reward!`,
+        sentAt: now.toISOString(),
+        reachedCount: 1,
+        isForMerchant: true
+      };
+      db.notifications.unshift(merchantNotif);
     } else {
       appendAuditLog(db, `Retail Customer (${customerId})`, `Scanned STAMP card at ${business.name} (Stamps total: ${rel.stampsCount})`);
     }
@@ -1013,6 +1065,20 @@ app.post("/api/customer/points", async (req, res) => {
         reachedCount: 1
       };
       db.notifications.unshift(newNotif);
+
+      // Push notification to the merchant too informing which customer just redeemed it
+      const customerObj = db.customers.find(c => c.id === customerId);
+      const custName = customerObj?.name || customerId;
+      const merchantNotif: NotificationMsg = {
+        id: `notif-merchant-points-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        businessId: business.id,
+        title: `🚨 Points Reward Unlocked!`,
+        message: `Customer ${custName} (${customerId}) reached points threshold${qtyText} and unlocked reward: "${business.rewardDescription}". Verify and reward!`,
+        sentAt: now.toISOString(),
+        reachedCount: 1,
+        isForMerchant: true
+      };
+      db.notifications.unshift(merchantNotif);
     } else {
       appendAuditLog(db, `Retail Customer (${customerId})`, `Earned ${points} points at ${business.name} (Price amount spent: ${business.operatingCurrency} ${amount})`);
     }
@@ -1287,6 +1353,20 @@ app.post("/api/customer/coupon/claim", async (req, res) => {
       reachedCount: 1
     };
     db.notifications.unshift(newNotif);
+
+    // Push notification to the merchant too informing which customer just redeemed it
+    const customerObj = db.customers.find(c => c.id === customerId);
+    const custName = customerObj?.name || customerId;
+    const merchantNotif = {
+      id: `notif-merchant-claim-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      businessId: biz.id,
+      title: `🚨 Coupon Claimed!`,
+      message: `Customer ${custName} (${customerId}) spent ${offer.pointsCost} points to claim: "${offer.title}". Coupon Code: ${couponId}.`,
+      sentAt: new Date().toISOString(),
+      reachedCount: 1,
+      isForMerchant: true
+    };
+    db.notifications.unshift(merchantNotif);
 
     await saveDBToFirestore(db);
     res.json({ success: true, pointsCount: rel.pointsCount, coupon: newCoupon });

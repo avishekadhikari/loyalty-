@@ -58,6 +58,7 @@ export interface Customer {
   email: string;
   phone: string;
   joinedAt: string;
+  preferredLanguage?: 'en' | 'ne' | 'hi' | string;
 }
 
 export interface CustomerBusinessRelation {
@@ -91,6 +92,7 @@ export interface NotificationMsg {
   message: string;
   sentAt: string;
   reachedCount: number;
+  isForMerchant?: boolean;
 }
 
 export interface AuditLog {
