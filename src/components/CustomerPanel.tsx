@@ -333,7 +333,7 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
         errorMsg += " Running inside an iframe often blocks camera streams. Please click 'Open in New Tab' from the Settings menu at the top right of AI Studio to grant permissions!";
       }
       setCameraError(errorMsg);
-      setCameraActive(false);
+      setCameraActive(true);
     }
   };
 
@@ -625,6 +625,102 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
   return (
     <div id="customer-panel" className="max-w-md mx-auto glass-card min-h-[640px] shadow-2xl rounded-3xl overflow-hidden flex flex-col border border-white/10 text-white relative">
       
+      {/* Real-time Full Screen Camera Overlay Covering the entire Simulated Phone Layout */}
+      <AnimatePresence>
+        {cameraActive && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="absolute inset-0 z-50 bg-slate-950 flex flex-col rounded-3xl overflow-hidden"
+            id="camera-fullscreen-overlay"
+          >
+            {/* Header */}
+            <div className="p-4 bg-slate-900 border-b border-white/10 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <Camera className="w-5 h-5 text-emerald-405 text-emerald-400 animate-pulse" />
+                <div className="text-left">
+                  <h3 className="text-xs font-black text-white uppercase tracking-wider">
+                    Live Phone Camera
+                  </h3>
+                  <p className="text-[9px] text-slate-400 font-mono">Point at any customer scan code</p>
+                </div>
+              </div>
+              <button 
+                onClick={stopCamera}
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition hover:scale-105 cursor-pointer"
+                title="Close Camera"
+                id="btn-close-camera-overlay"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Video stream container */}
+            <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+              <video 
+                ref={videoRef}
+                className="absolute inset-0 w-full h-full object-cover"
+                playsInline
+                muted
+              />
+
+              {/* Holographic scanning target frame */}
+              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center bg-black/35">
+                <div className="w-56 h-56 border border-dashed border-indigo-400/25 rounded-3xl relative flex items-center justify-center">
+                  {/* Corner brackets */}
+                  <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-emerald-400 rounded-tl-lg"></div>
+                  <div className="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-emerald-400 rounded-tr-lg"></div>
+                  <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-emerald-400 rounded-bl-lg"></div>
+                  <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-emerald-400 rounded-br-lg"></div>
+                  
+                  {/* Glowing line scanning back and forth */}
+                  <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent absolute top-0 animate-[bounce_3s_infinite] shadow shadow-emerald-400/80" />
+                </div>
+                <div className="mt-5 bg-slate-950/80 backdrop-blur border border-white/5 rounded-full px-4 py-1.5 text-[10px] text-slate-300 font-mono tracking-wide shadow-md">
+                  Align stamp QR or point coupon
+                </div>
+              </div>
+
+              {/* Detailed trouble guide overlay when error is active */}
+              {cameraError && (
+                <div className="absolute inset-x-4 bottom-4 bg-slate-900/95 border border-red-500/35 rounded-2xl p-4 shadow-2xl text-left z-20 space-y-3 max-h-[85%] overflow-y-auto">
+                  <div className="flex items-center gap-1.5 text-red-400 font-black text-xs">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>Camera Permission Needed</span>
+                  </div>
+                  <p className="text-[10px] text-slate-300 leading-normal font-sans">{cameraError}</p>
+                  
+                  <div className="bg-black/40 p-2.5 rounded-xl border border-white/5 space-y-1.5 text-[9.5px] font-mono text-slate-400">
+                    <p className="font-extrabold text-white uppercase flex items-center gap-1"><Info className="w-3.5 h-3.5 text-amber-400" /> Secure Sandbox Tip:</p>
+                    <p>1. Click the <span className="text-indigo-400">"Open in New Tab"</span> icon on top of the AI Studio preview menu.</p>
+                    <p>2. Allow your browser to enable live camera hardware sync safely!</p>
+                  </div>
+
+                  <button
+                    onClick={stopCamera}
+                    className="w-full py-2 bg-red-650/20 hover:bg-red-650/30 border border-red-500/25 text-red-200 font-black text-[10px] uppercase rounded-xl transition cursor-pointer"
+                  >
+                    Close Camera Settings
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom status panel with fallback action button */}
+            <div className="p-4 bg-slate-900 border-t border-white/10 shrink-0">
+              <button
+                onClick={stopCamera}
+                className="w-full bg-slate-800 hover:bg-slate-750 text-slate-300 font-extrabold text-xs py-2.5 rounded-xl transition cursor-pointer"
+              >
+                Cancel and Go Back
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Simulated System Push Notification Alert Banner Overlay */}
       <AnimatePresence>
         {activePopupNotif && (
@@ -1083,73 +1179,20 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
             </div>
 
             {cameraActive ? (
-              <div className="glass-panel rounded-2xl p-4 shadow-sm border border-white/10 space-y-4">
-                <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                  <h3 className="text-xs font-bold text-slate-200 uppercase tracking-widest flex items-center gap-1.5 font-mono">
-                    <Camera className="w-4 h-4 text-emerald-400 animate-pulse" /> Live Camera Decoder
-                  </h3>
-                  <button 
-                    onClick={stopCamera}
-                    className="text-[10px] text-red-400 border border-red-500/25 bg-red-500/10 hover:bg-red-500/20 px-2 py-0.5 rounded font-mono font-bold transition uppercase cursor-pointer"
-                  >
-                    ✕ Close Camera
-                  </button>
+              <div className="glass-panel rounded-2xl p-6 text-center border border-white/10 space-y-4">
+                <div className="w-12 h-12 bg-emerald-500/10 text-emerald-300 rounded-full flex items-center justify-center mx-auto border border-emerald-500/20 animate-pulse">
+                  <Camera className="w-6 h-6 animate-pulse" />
                 </div>
-
-                {cameraError && (
-                  <div className="p-3.5 bg-red-950/30 border border-red-500/30 rounded-xl text-xs text-red-200 space-y-3 text-left">
-                    <p className="font-extrabold flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4 text-red-400" /> Camera Sensor Disabled
-                    </p>
-                    <p className="font-semibold leading-relaxed font-sans text-slate-300">{cameraError}</p>
-                    
-                    <div className="bg-black/40 p-2.5 rounded-lg border border-white/5 space-y-1.5 text-[10.5px] font-mono text-slate-400">
-                      <p className="font-bold text-white uppercase flex items-center gap-1"><Info className="w-3.5 h-3.5 text-amber-400" /> How to fix & scan with Phone:</p>
-                      <p>1. Tap the <b className="text-indigo-400">Settings</b> wheel/icon (top right menu of Google AI Studio or your browser).</p>
-                      <p>2. Select <b className="text-indigo-400">"Open in New Tab"</b> (or copy the current browser URL to your phone).</p>
-                      <p>3. Allow browser camera permissions to instantly sync real merchant scans!</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="relative aspect-video max-w-sm mx-auto bg-slate-950/90 rounded-2xl overflow-hidden border border-white/10 flex flex-col items-center justify-center">
-                  <video 
-                    ref={videoRef}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    playsInline
-                    muted
-                  />
-
-                  {/* Hidden stream decoding canvas */}
-                  <canvas ref={canvasRef} className="hidden" />
-
-                  {/* Hologram Reticle Target Grid Frame covering viewport */}
-                  <div className="absolute inset-0 border-2 border-dashed border-indigo-500/20 pointer-events-none rounded-2xl flex items-center justify-center">
-                    <div className="w-28 h-28 border-2 border-emerald-400/50 rounded-xl relative">
-                      {/* Corner brackets */}
-                      <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-emerald-400 rounded-tl"></div>
-                      <div className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-emerald-400 rounded-tr"></div>
-                      <div className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-emerald-400 rounded-bl"></div>
-                      <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-emerald-400 rounded-br"></div>
-                      
-                      {/* Glowing Scan Bar */}
-                      <div className="w-full h-0.5 bg-emerald-400 absolute top-0 shadow shadow-emerald-400/80 animate-[bounce_3s_infinite]" />
-                    </div>
-                  </div>
-
-                  {!cameraError && (
-                    <div className="absolute bottom-2 left-2 right-2 bg-slate-950/80 backdrop-blur-md border border-white/5 rounded-lg px-2 py-1 text-center text-[9px] text-slate-300 font-mono tracking-wide z-10 pointer-events-none">
-                      Focus on a Stamp QR or Signed Points Code
-                    </div>
-                  )}
+                <div className="space-y-1">
+                  <h4 className="text-sm font-bold text-white">Full-Screen Camera Open</h4>
+                  <p className="text-xs text-slate-400">The camera has opened covering the entire phone layout for optimal decoding view.</p>
                 </div>
-
-                <div className="bg-indigo-950/30 border border-indigo-500/20 px-3 py-2.5 rounded-xl flex items-start gap-2 max-w-sm mx-auto text-left">
-                  <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-                  <p className="text-[9.5px] text-slate-400 leading-relaxed font-mono font-semibold">
-                    AUTO-RESOLVE: Point this feed at any QR shown on another screen to instantly process enrollments, active stamps, and secure cryptographically signed point vouchers inside your active wallet.
-                  </p>
-                </div>
+                <button
+                  onClick={stopCamera}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl cursor-pointer shadow active:scale-95 transition"
+                >
+                  ✕ Close Full-Screen View
+                </button>
               </div>
             ) : (
               <div className="glass-panel rounded-2xl p-4 shadow-sm space-y-4 border border-white/10">
