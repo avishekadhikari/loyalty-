@@ -665,6 +665,7 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
                 playsInline
                 muted
               />
+              <canvas ref={canvasRef} className="hidden" />
 
               {/* Holographic scanning target frame */}
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center bg-black/35">
