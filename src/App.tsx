@@ -11,6 +11,7 @@ import MarketingPage from "./components/MarketingPage";
 export default function App() {
   // Active viewing context
   const [activeRole, setActiveRole] = useState<"landing" | "customer" | "business" | "admin">("landing");
+  const [showSandboxGuide, setShowSandboxGuide] = useState(true);
   
   // Storage State
   const [db, setDb] = useState<AppDatabase | null>(null);
@@ -555,20 +556,56 @@ export default function App() {
         
         {/* Quick sandbox walkthrough instructions banner (Only for sandbox dashboard contexts) */}
         {activeRole !== "landing" && (
-          <div className="mb-6 bg-white/5 backdrop-blur-md text-white p-5 rounded-3xl border border-white/10 shadow-xl flex items-start gap-3.5">
-            <HelpCircle className="w-6 h-6 text-indigo-400 shrink-0 mt-0.5" />
-            <div className="text-xs space-y-1.5 leading-relaxed">
-              <p className="font-extrabold text-sm tracking-wide text-indigo-300">🎉 Interactive Sandbox Sandbox Setup Guides</p>
-              <p className="text-slate-300">
-                The customer, business, and admin panels are connected to the <b>same centralized mock ledger store</b>. 
-                Switch dashboards using the selector above. Try the following combinations:
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1 text-slate-300 font-medium">
-                <p><b>1. Enroll Customer:</b> Select "Customer App" tab, join a rewards program, and perform sandbox stamping immediately.</p>
-                <p><b>2. Anti-Abuse Stamps:</b> Scan the "Stamp QR" to try cooldown rules. Success will register only once every 12 hours server check.</p>
-                <p><b>3. Signed Point QR:</b> Select "Merchant Portal", generate a dynamic Points QR with an invoice, scan it in Customer App to collect points!</p>
+          <div className="mb-6">
+            {!showSandboxGuide ? (
+              <button
+                onClick={() => setShowSandboxGuide(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 rounded-full text-xs font-bold transition-all cursor-pointer shadow-lg shadow-indigo-950/20 animate-pulse"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>Show Interactive Sandbox Tour Guide 💡</span>
+              </button>
+            ) : (
+              <div className="bg-gradient-to-r from-indigo-950/40 via-slate-900/50 to-slate-900/40 backdrop-blur-xl text-white p-5 rounded-3xl border border-indigo-500/20 border-l-4 border-l-indigo-500 shadow-2xl relative">
+                <button
+                  onClick={() => setShowSandboxGuide(false)}
+                  className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition cursor-pointer"
+                  title="Collapse Guide"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="flex items-start gap-4">
+                  <div className="bg-indigo-500/10 p-2.5 rounded-2xl border border-indigo-500/20 text-indigo-400 shrink-0">
+                    <HelpCircle className="w-5 h-5" />
+                  </div>
+                  <div className="text-xs space-y-2 leading-relaxed pr-6">
+                    <div>
+                      <p className="font-extrabold text-sm tracking-wide text-white flex items-center gap-1.5">
+                        Interactive Sandbox Simulator Hub
+                        <span className="text-[9px] bg-indigo-500/20 text-indigo-300 font-extrabold px-1.5 py-0.5 rounded border border-indigo-500/30 font-mono">MVP LEDGER ACTIVE</span>
+                      </p>
+                      <p className="text-slate-300 mt-1">
+                        Both the customer, business, and admin panels interact with the <b>same centralized mock ledger store</b>. Try these quick simulations to see live synchronizations:
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-white/5">
+                      <div className="space-y-1 bg-white/2 p-2.5 rounded-xl border border-white/5">
+                        <p className="font-bold text-indigo-300 flex items-center gap-1">📱 1. Join & Stamp</p>
+                        <p className="text-slate-400 text-[11px]">Select "Customer App", join a program, and perform offline-ready stamps.</p>
+                      </div>
+                      <div className="space-y-1 bg-white/2 p-2.5 rounded-xl border border-white/5">
+                        <p className="font-bold text-indigo-300 flex items-center gap-1">⏱️ 2. Cooldown Checks</p>
+                        <p className="text-slate-400 text-[11px]">Scan the QR. Anti-abuse filters limit stamp rewards to once every 12 hours.</p>
+                      </div>
+                      <div className="space-y-1 bg-white/2 p-2.5 rounded-xl border border-white/5">
+                        <p className="font-bold text-indigo-300 flex items-center gap-1">🪙 3. Points-as-Currency</p>
+                        <p className="text-slate-400 text-[11px]">Generate a dynamic Points QR in "Merchant Portal", scan on Customer App to spend/redeem points!</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 

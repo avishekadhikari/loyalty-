@@ -66,11 +66,29 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
   const currentCustomer = db.customers.find(c => c.id === customerId);
   const customerRelations = db.customer_business_relations.filter(r => r.customerId === customerId);
 
+  // Keep track of the database values we loaded to avoid overwriting user input on re-renders
+  const loadedCustomerRef = useRef<{ id: string; name: string; email: string; lang: string } | null>(null);
+
   useEffect(() => {
     if (currentCustomer) {
-      setProfileName(currentCustomer.name || "");
-      setProfileEmail(currentCustomer.email || "");
-      setProfileLanguage(currentCustomer.preferredLanguage || "en");
+      const prev = loadedCustomerRef.current;
+      const hasChanged = !prev || 
+                         prev.id !== customerId || 
+                         prev.name !== (currentCustomer.name || "") || 
+                         prev.email !== (currentCustomer.email || "") || 
+                         prev.lang !== (currentCustomer.preferredLanguage || "en");
+      
+      if (hasChanged) {
+        setProfileName(currentCustomer.name || "");
+        setProfileEmail(currentCustomer.email || "");
+        setProfileLanguage(currentCustomer.preferredLanguage || "en");
+        loadedCustomerRef.current = {
+          id: customerId,
+          name: currentCustomer.name || "",
+          email: currentCustomer.email || "",
+          lang: currentCustomer.preferredLanguage || "en"
+        };
+      }
     }
   }, [currentCustomer, customerId]);
 
@@ -623,7 +641,7 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
   }, [activePopupNotif]);
 
   return (
-    <div id="customer-panel" className="max-w-md mx-auto glass-card min-h-[640px] shadow-2xl rounded-3xl overflow-hidden flex flex-col border border-white/10 text-white relative">
+    <div id="customer-panel" className="max-w-md mx-auto bg-slate-950/90 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] rounded-[38px] overflow-hidden flex flex-col border-8 border-slate-800 text-white relative ring-1 ring-white/15 min-h-[680px]">
       
       {/* Real-time Full Screen Camera Overlay Covering the entire Simulated Phone Layout */}
       <AnimatePresence>
@@ -775,11 +793,23 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
       </AnimatePresence>
       
       {/* Visual mobile notched phone border simulation */}
-      <div className="bg-white/5 text-white px-5 pt-3 pb-4 flex flex-col gap-2 rounded-t-2xl border-b border-white/5">
-        <div className="flex justify-between items-center text-xs text-slate-400 font-mono">
-          <span>📶 LTE / WiFi</span>
-          <div className="bg-indigo-500/10 border border-indigo-500/25 px-3 py-1 rounded-full text-indigo-300 font-semibold text-[10px]">PWA READY</div>
-          <span>🔋 100% (2026)</span>
+      <div className="bg-slate-950/80 text-white px-5 pt-3.5 pb-4 flex flex-col gap-2 rounded-t-3xl border-b border-white/5 relative overflow-hidden">
+        {/* Sleek Camera Notch Speaker simulator */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-4 bg-black rounded-b-xl flex items-center justify-center gap-1.5 border-b border-white/5 shadow-inner">
+          <div className="w-8 h-1 bg-neutral-800 rounded-full" />
+          <div className="w-1.5 h-1.5 bg-indigo-950 rounded-full border border-indigo-800/20" />
+        </div>
+        
+        <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono pt-1">
+          <span className="font-black text-slate-300">9:41</span>
+          <div className="bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.2 rounded-full text-indigo-300 font-extrabold text-[8.5px] tracking-wider uppercase select-none">
+            PWA ACTIVE
+          </div>
+          <div className="flex items-center gap-1.5 text-slate-300 font-sans">
+            <span>📶</span>
+            <span>📶</span>
+            <span className="text-[11px] leading-none">🔋</span>
+          </div>
         </div>
 
         {/* Account Selector */}
@@ -935,14 +965,25 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
                 // Cooldown Calculation
                 const stampStatus = getStampCooldown(relation.lastStampAt);
 
+                let cardThemeClass = "bg-gradient-to-br from-slate-900/95 via-slate-950/98 to-slate-950 border-white/10";
+                if (b.id === "kathmandu-coffee") {
+                  cardThemeClass = "bg-gradient-to-br from-[#2c1c12]/95 via-[#16110d] to-[#0c0d12] border-amber-900/30";
+                } else if (b.id === "everest-gears") {
+                  cardThemeClass = "bg-gradient-to-br from-[#13273c]/95 via-[#0e1622] to-[#0c0d12] border-sky-900/30";
+                } else if (b.id === "himalayan-herbs") {
+                  cardThemeClass = "bg-gradient-to-br from-[#0f2d1e]/95 via-[#0a1510] to-[#0c0d12] border-emerald-900/30";
+                }
+
                 return (
                   <div 
                     key={relation.id} 
                     id={`loyalty-card-${b.id}`}
-                    className={`glass-panel rounded-2xl p-4 shadow-sm relative overflow-hidden transition-all duration-200 hover:bg-white/8 hover:border-white/15 ${
-                      isSuspended ? "opacity-60 border-red-500 bg-red-950/20" : ""
+                    className={`rounded-3xl p-5 shadow-2xl relative overflow-hidden border transition-all duration-300 hover:scale-[1.01] hover:shadow-black/60 ${cardThemeClass} ${
+                      isSuspended ? "opacity-60 border-red-500/50 bg-red-950/20" : ""
                     }`}
                   >
+                    {/* Glossy card light overlay effect */}
+                    <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/3 to-white/8 pointer-events-none" />
                     {/* Status header banner */}
                     {isSuspended && (
                       <div className="absolute top-0 right-0 left-0 bg-red-500/80 backdrop-blur-sm text-white text-[9px] font-bold text-center py-0.5 uppercase tracking-wider flex items-center justify-center gap-1">
@@ -1008,6 +1049,43 @@ export default function CustomerPanel({ db, onRefresh, customerId, setCustomerId
                           style={{ width: `${progressPercent}%` }}
                         ></div>
                       </div>
+
+                      {/* Visual Stamp Card Grid (Only for stamp loyalty mode) */}
+                      {isStampMode && (
+                        <div className="py-1">
+                          <div className="grid grid-cols-5 gap-2 bg-black/40 p-2.5 rounded-2xl border border-white/5 justify-items-center">
+                            {Array.from({ length: rewardLimit }).map((_, idx) => {
+                              const isStamped = idx < progressCount;
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`w-9 h-9 rounded-full flex items-center justify-center relative transition-all duration-300 ${
+                                    isStamped
+                                      ? "bg-gradient-to-tr from-indigo-500 to-purple-600 border border-indigo-400 shadow-md shadow-indigo-500/20 scale-100"
+                                      : "bg-slate-950/60 border border-dashed border-white/10 text-slate-500 hover:border-white/30 text-[10px] font-bold"
+                                  }`}
+                                >
+                                  {isStamped ? (
+                                    <motion.span
+                                      initial={{ scale: 0 }}
+                                      animate={{ scale: [0, 1.2, 1] }}
+                                      transition={{ type: "spring", stiffness: 200, damping: 10 }}
+                                      className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] select-none text-base"
+                                    >
+                                      🌟
+                                    </motion.span>
+                                  ) : (
+                                    <span>{idx + 1}</span>
+                                  )}
+                                  {isStamped && (
+                                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-450 rounded-full border border-white/10" />
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Reward Claim Text */}
                       <div className="flex gap-1.5 items-start text-xs rounded-xl p-2.5 bg-[#0c0e14]/40 border border-white/5">
