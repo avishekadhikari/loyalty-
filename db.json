@@ -1,0 +1,396 @@
+{
+  "businesses": [
+    {
+      "id": "kathmandu-coffee",
+      "name": "Kathmandu Valley Coffee",
+      "password": null,
+      "logoUrl": "☕",
+      "country": "Nepal",
+      "city": "Kathmandu",
+      "operatingCurrency": "NPR",
+      "loyaltyMode": "stamp",
+      "stampRewardLimit": 10,
+      "pointRewardLimit": 500,
+      "rewardDescription": "Free organic Himalayan Cappuccino",
+      "status": "active",
+      "languagePreference": "en",
+      "billingCurrency": "NPR",
+      "paymentGateway": "esewa",
+      "createdAt": "2026-06-17T17:18:50.003Z",
+      "trialEndsAt": "2026-07-31T17:18:50.003Z",
+      "planId": "basic",
+      "subscriptionStatus": "active",
+      "nextBillingAt": "2026-07-22T17:18:50.003Z",
+      "overrideQuota": null,
+      "extraQuota": 0,
+      "notificationsSentThisMonth": 1,
+      "pointsRate": 1,
+      "paymentRetries": 0,
+      "pointsOffers": [
+        {
+          "id": "kc-off-1",
+          "title": "Fresh Organic Americano",
+          "pointsCost": 50,
+          "description": "Enjoy a freshly brewed hot Americano from local organic coffee beans."
+        },
+        {
+          "id": "kc-off-2",
+          "title": "Yak Milk Cappuccino",
+          "pointsCost": 100,
+          "description": "Our signature double-shot espresso topped with steamed local yak milk foam."
+        },
+        {
+          "id": "kc-off-3",
+          "title": "Chocolate Fudge Brownie",
+          "pointsCost": 150,
+          "description": "A rich, gooey warm Belgian chocolate brownie topped with chocolate drizzle."
+        },
+        {
+          "id": "kc-off-4",
+          "title": "French Press Pot & Muffin",
+          "pointsCost": 200,
+          "description": "A complete French press pot serving two, paired with any muffin of your choice."
+        }
+      ]
+    },
+    {
+      "id": "himalayan-mountaineering",
+      "name": "Everest Climbing Gear Shop",
+      "password": null,
+      "logoUrl": "🧗",
+      "country": "Nepal",
+      "city": "Pokhara",
+      "operatingCurrency": "NPR",
+      "loyaltyMode": "point",
+      "stampRewardLimit": 10,
+      "pointRewardLimit": 1000,
+      "rewardDescription": "NPR 1,000 off next purchase of 5,000+",
+      "status": "active",
+      "languagePreference": "en",
+      "billingCurrency": "NPR",
+      "paymentGateway": "khalti",
+      "createdAt": "2026-05-18T17:18:50.003Z",
+      "trialEndsAt": "2026-06-01T17:18:50.003Z",
+      "planId": "premium",
+      "subscriptionStatus": "active",
+      "nextBillingAt": "2026-07-29T17:18:50.003Z",
+      "overrideQuota": null,
+      "extraQuota": 0,
+      "notificationsSentThisMonth": 8,
+      "pointsRate": 0.5,
+      "paymentRetries": 0,
+      "pointsOffers": [
+        {
+          "id": "hm-off-1",
+          "title": "Heavy Duty Carabiner",
+          "pointsCost": 120,
+          "description": "A high-tensile, lightweight aluminum carabiner rated for professional climbing."
+        },
+        {
+          "id": "hm-off-2",
+          "title": "Climbers Chalk Bag with Chalk",
+          "pointsCost": 250,
+          "description": "Ergonomic chalk bag pre-filled with premium moisture-absorbing magnesium carbonate chalk."
+        },
+        {
+          "id": "hm-off-3",
+          "title": "Windproof Alpine Beanie",
+          "pointsCost": 400,
+          "description": "Thermoregulating merino wool beanie designed for severe high-altitude alpine weather."
+        },
+        {
+          "id": "hm-off-4",
+          "title": "Gore-Tex Mountaineering Mittens",
+          "pointsCost": 800,
+          "description": "Sub-zero proof, fully insulated waterproof gloves with reinforced palms."
+        }
+      ]
+    },
+    {
+      "id": "namche-bistro",
+      "name": "Namche Alpine Bistro",
+      "password": null,
+      "logoUrl": "🍕",
+      "country": "Nepal",
+      "city": "Namche Bazaar",
+      "operatingCurrency": "NPR",
+      "loyaltyMode": "stamp",
+      "stampRewardLimit": 8,
+      "pointRewardLimit": 500,
+      "rewardDescription": "Free Warm Apple Pie with Butter tea",
+      "status": "suspended",
+      "languagePreference": "ne",
+      "billingCurrency": "NPR",
+      "paymentGateway": "esewa",
+      "createdAt": "2026-06-02T17:18:50.003Z",
+      "trialEndsAt": "2026-06-16T17:18:50.003Z",
+      "planId": "basic",
+      "subscriptionStatus": "past_due",
+      "nextBillingAt": "2026-07-02T17:18:50.003Z",
+      "overrideQuota": null,
+      "extraQuota": 0,
+      "notificationsSentThisMonth": 5,
+      "pointsRate": 1,
+      "paymentRetries": 3,
+      "pointsOffers": [
+        {
+          "id": "nb-off-1",
+          "title": "Butter Tea Cup",
+          "pointsCost": 40,
+          "description": "Traditional salted Tibetan butter tea made with premium tea leaves and yak butter."
+        },
+        {
+          "id": "nb-off-2",
+          "title": "Warm Apple Pie Slice",
+          "pointsCost": 100,
+          "description": "Freshly baked apple pie slice served hot with cinnamon and powdered sugar."
+        },
+        {
+          "id": "nb-off-3",
+          "title": "Sherpa Stew (Shyakpa) Pot",
+          "pointsCost": 250,
+          "description": "A comforting bowl of thick, hand-pulled noodles with seasonal vegetables and broth."
+        }
+      ]
+    },
+    {
+      "id": "london-tea",
+      "name": "The London Tea Room",
+      "password": null,
+      "logoUrl": "🫖",
+      "country": "United Kingdom",
+      "city": "London",
+      "operatingCurrency": "GBP",
+      "loyaltyMode": "stamp",
+      "stampRewardLimit": 10,
+      "pointRewardLimit": 300,
+      "rewardDescription": "Free British High Tea & Homemade Scone",
+      "status": "active",
+      "languagePreference": "en",
+      "billingCurrency": "GBP",
+      "paymentGateway": "stripe",
+      "createdAt": "2026-07-02T17:18:50.003Z",
+      "trialEndsAt": "2026-07-16T17:18:50.003Z",
+      "planId": "premium",
+      "subscriptionStatus": "active",
+      "nextBillingAt": "2026-08-01T17:18:50.003Z",
+      "overrideQuota": 30,
+      "extraQuota": 5,
+      "notificationsSentThisMonth": 12,
+      "pointsRate": 10,
+      "paymentRetries": 0,
+      "pointsOffers": [
+        {
+          "id": "lt-off-1",
+          "title": "Classic Earl Grey Pot",
+          "pointsCost": 60,
+          "description": "A premium loose-leaf Earl Grey tea pot brewed with real bergamot essence."
+        },
+        {
+          "id": "lt-off-2",
+          "title": "Fruit Scone with Clotted Cream",
+          "pointsCost": 110,
+          "description": "Freshly baked fruit scone paired with devonshire clotted cream and strawberry jam."
+        },
+        {
+          "id": "lt-off-3",
+          "title": "Royal High Tea Set",
+          "pointsCost": 300,
+          "description": "Our grand three-tier stand with finger sandwiches, warm scones, and sweet pastries."
+        }
+      ]
+    },
+    {
+      "id": "tokyo-bento",
+      "name": "Tokyo Sushi Grill & Bar",
+      "password": null,
+      "logoUrl": "🍣",
+      "country": "Japan",
+      "city": "Shibuya",
+      "operatingCurrency": "USD",
+      "loyaltyMode": "point",
+      "stampRewardLimit": 12,
+      "pointRewardLimit": 1000,
+      "rewardDescription": "Free Premium Salmon Roll Combo ($20 value)",
+      "status": "active",
+      "languagePreference": "en",
+      "billingCurrency": "USD",
+      "paymentGateway": "paypal",
+      "createdAt": "2026-07-12T17:18:50.003Z",
+      "trialEndsAt": "2026-07-26T17:18:50.003Z",
+      "planId": "enterprise",
+      "subscriptionStatus": "trialing",
+      "nextBillingAt": "2026-07-26T17:18:50.003Z",
+      "overrideQuota": null,
+      "extraQuota": 0,
+      "notificationsSentThisMonth": 0,
+      "pointsRate": 10,
+      "paymentRetries": 0,
+      "pointsOffers": [
+        {
+          "id": "tb-off-1",
+          "title": "Miso Soup & Edamame",
+          "pointsCost": 80,
+          "description": "Traditional soybean paste soup with tofu paired with seasoned, steamed edamame."
+        },
+        {
+          "id": "tb-off-2",
+          "title": "California Roll (8pcs)",
+          "pointsCost": 200,
+          "description": "Classic roll filled with crab, avocado, and cucumber, topped with toasted sesame."
+        },
+        {
+          "id": "tb-off-3",
+          "title": "Salmon & Tuna Sashimi Combo",
+          "pointsCost": 450,
+          "description": "Chef's selection of fresh, thick-cut raw Norwegian salmon and Pacific yellowfin tuna."
+        },
+        {
+          "id": "tb-off-4",
+          "title": "Deluxe Bento Box",
+          "pointsCost": 750,
+          "description": "A full meal including chicken teriyaki, tempura shrimp, sushi roll, and seaweed salad."
+        }
+      ]
+    }
+  ],
+  "customers": [
+    {
+      "id": "aarav-sharma",
+      "name": "Aarav Sharma",
+      "email": "aarav@gmail.com",
+      "phone": "9861774000",
+      "joinedAt": "2026-06-22T17:18:50.003Z"
+    },
+    {
+      "id": "maya-peterson",
+      "name": "Maya Peterson",
+      "email": "maya.p@gmail.com",
+      "phone": "+12025550143",
+      "joinedAt": "2026-07-07T17:18:50.003Z"
+    },
+    {
+      "id": "rajesh-gupta",
+      "name": "Rajesh Gupta",
+      "email": "rajesh@loyalty.np",
+      "phone": "9845123456",
+      "joinedAt": "2026-07-12T17:18:50.003Z"
+    }
+  ],
+  "customer_business_relations": [
+    {
+      "id": "aarav-sharma_kathmandu-coffee",
+      "customerId": "aarav-sharma",
+      "businessId": "kathmandu-coffee",
+      "stampsCount": 7,
+      "pointsCount": 150,
+      "lastStampAt": "2026-07-17T02:18:50.003Z",
+      "lastVisitAt": "2026-07-17T02:18:50.003Z",
+      "optInNotifications": true,
+      "claimedCoupons": []
+    },
+    {
+      "id": "aarav-sharma_himalayan-mountaineering",
+      "customerId": "aarav-sharma",
+      "businessId": "himalayan-mountaineering",
+      "stampsCount": 0,
+      "pointsCount": 450,
+      "lastStampAt": null,
+      "lastVisitAt": "2026-07-13T17:18:50.003Z",
+      "optInNotifications": true,
+      "claimedCoupons": []
+    },
+    {
+      "id": "aarav-sharma_namche-bistro",
+      "customerId": "aarav-sharma",
+      "businessId": "namche-bistro",
+      "stampsCount": 5,
+      "pointsCount": 120,
+      "lastStampAt": "2026-07-17T14:18:50.004Z",
+      "lastVisitAt": "2026-07-17T14:18:50.004Z",
+      "optInNotifications": false,
+      "claimedCoupons": []
+    },
+    {
+      "id": "maya-peterson_london-tea",
+      "customerId": "maya-peterson",
+      "businessId": "london-tea",
+      "stampsCount": 4,
+      "pointsCount": 180,
+      "lastStampAt": "2026-07-15T17:18:50.004Z",
+      "lastVisitAt": "2026-07-16T17:18:50.004Z",
+      "optInNotifications": true,
+      "claimedCoupons": []
+    }
+  ],
+  "subscription_plans": [
+    {
+      "id": "free",
+      "name": "Lifetime Free Plan",
+      "maxCustomers": 50,
+      "monthlyNotifQuota": 3,
+      "prices": {
+        "NPR": 0,
+        "USD": 0,
+        "EUR": 0,
+        "GBP": 0,
+        "INR": 0
+      }
+    },
+    {
+      "id": "basic",
+      "name": "Basic Plan",
+      "maxCustomers": 200,
+      "monthlyNotifQuota": 5,
+      "prices": {
+        "NPR": 500,
+        "USD": 5,
+        "EUR": 4.5,
+        "GBP": 4,
+        "INR": 350
+      }
+    },
+    {
+      "id": "premium",
+      "name": "Premium Plan",
+      "maxCustomers": 1000,
+      "monthlyNotifQuota": 20,
+      "prices": {
+        "NPR": 1500,
+        "USD": 15,
+        "EUR": 13.5,
+        "GBP": 12,
+        "INR": 1000
+      }
+    },
+    {
+      "id": "enterprise",
+      "name": "Enterprise Plan",
+      "maxCustomers": -1,
+      "monthlyNotifQuota": 100,
+      "prices": {
+        "NPR": 5000,
+        "USD": 50,
+        "EUR": 45,
+        "GBP": 40,
+        "INR": 3500
+      }
+    }
+  ],
+  "payment_transactions": [],
+  "notifications": [],
+  "audit_logs": [],
+  "enabledLanguages": [
+    "en",
+    "ne",
+    "hi"
+  ],
+  "globalExchangeRates": {
+    "USD": 1,
+    "NPR": 133.5,
+    "EUR": 0.92,
+    "GBP": 0.79,
+    "INR": 83.2,
+    "JPY": 155.4
+  }
+}

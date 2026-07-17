@@ -5,7 +5,17 @@ import crypto from "crypto";
 import admin from "firebase-admin";
 import { cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { AppDatabase, Business, Customer, CustomerBusinessRelation, SubscriptionPlan, PaymentTransaction, NotificationMsg, AuditLog } from "../src/types";
+import { AppDatabase, Business, Customer, CustomerBusinessRelation, SubscriptionPlan, PaymentTransaction, NotificationMsg, AuditLog } from "../frontend/types";
+import { db } from "./db/index.ts";
+import {
+  businesses,
+  customers,
+  customerBusinessRelations,
+  paymentTransactions,
+  notifications,
+  auditLogs,
+  systemMetadata
+} from "./db/schema.ts";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -384,17 +394,9 @@ try {
 // Determine if we should use Firestore
 let useFirestore = true;
 
-const isGoogleCloud = !!process.env.K_SERVICE;
-
-const hasCredentialsEnv = !!(
-  process.env.FIREBASE_SERVICE_ACCOUNT || 
-  process.env.GOOGLE_APPLICATION_CREDENTIALS || 
-  (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY)
-);
-
-if (!isGoogleCloud && !hasCredentialsEnv) {
+if (!firebaseConfig || !firebaseConfig.projectId) {
   useFirestore = false;
-  console.log("[Firebase] Running outside Google Cloud without explicit credentials. Falling back to local db.json storage.");
+  console.log("[Firebase] No firebase-applet-config.json config found. Falling back to local db.json storage.");
 }
 
 // Initialize Firebase Admin
@@ -473,193 +475,319 @@ function saveLocalDB(db: AppDatabase) {
   }
 }
 
-// Helper: Seed Firestore database if empty
+// Helper: Seed Cloud SQL database if empty
 async function seedFirestoreIfEmpty() {
-  if (!useFirestore || !firestoreDb) {
-    console.log("[Firebase] Skipping Firestore seeding (running in local mode with db.json).");
+  if (!process.env.SQL_HOST) {
+    console.log("[PostgreSQL] Skipping PostgreSQL seeding (no host configuration).");
     return;
   }
   try {
-    const businessesSnap = await firestoreDb.collection("businesses").limit(1).get();
-    if (businessesSnap.empty) {
-      console.log("[Firebase] Firestore is empty. Initializing with platform seed dataset...");
-      
-      // Seed businesses
-      for (const b of initialDatabase.businesses) {
-        await firestoreDb.collection("businesses").doc(b.id).set(b);
-      }
-      
-      // Seed customers
-      for (const c of initialDatabase.customers) {
-        await firestoreDb.collection("customers").doc(c.id).set(c);
-      }
-      
-      // Seed relations
-      for (const r of initialDatabase.customer_business_relations) {
-        await firestoreDb.collection("customer_business_relations").doc(r.id).set(r);
-      }
-      
-      // Seed payment transactions
-      for (const tx of initialDatabase.payment_transactions) {
-        await firestoreDb.collection("payment_transactions").doc(tx.id).set(tx);
-      }
-      
-      // Seed notifications
-      for (const notif of initialDatabase.notifications) {
-        await firestoreDb.collection("notifications").doc(notif.id).set(notif);
-      }
-      
-      // Seed audit logs
-      for (const log of initialDatabase.audit_logs) {
-        await firestoreDb.collection("audit_logs").doc(log.id).set(log);
-      }
-      
-      // Seed system metadata
-      await firestoreDb.collection("system").doc("metadata").set({
-        enabledLanguages: initialDatabase.enabledLanguages,
-        globalExchangeRates: initialDatabase.globalExchangeRates
-      });
-      
-      console.log("[Firebase] Seed database populated successfully.");
+    const existing = await db.select().from(businesses).limit(1);
+    if (existing.length === 0) {
+      console.log("[PostgreSQL] Database is empty. Seeding data...");
+      await saveDBToFirestore(initialDatabase);
+      console.log("[PostgreSQL] Seeding completed.");
     }
-  } catch (error: any) {
-    console.log("[Database] Initialized storage engine.");
-    getLocalDB();
+  } catch (error) {
+    console.error("[PostgreSQL] Error seeding database:", error);
   }
 }
 
-// Helper: Load full DB structured snapshot from Firestore
+// Helper: Load full DB structured snapshot from Cloud SQL PostgreSQL
 async function fetchFullDBFromFirestore(): Promise<AppDatabase> {
-  if (!useFirestore || !firestoreDb) {
+  if (!process.env.SQL_HOST) {
     return getLocalDB();
   }
   try {
     const [
-      businessesSnap,
-      customersSnap,
-      relationsSnap,
-      transactionsSnap,
-      notificationsSnap,
-      auditLogsSnap,
-      metadataDoc
+      bRes,
+      cRes,
+      rRes,
+      txRes,
+      nRes,
+      logRes,
+      metaRes
     ] = await Promise.all([
-      firestoreDb.collection("businesses").get(),
-      firestoreDb.collection("customers").get(),
-      firestoreDb.collection("customer_business_relations").get(),
-      firestoreDb.collection("payment_transactions").get(),
-      firestoreDb.collection("notifications").get(),
-      firestoreDb.collection("audit_logs").get(),
-      firestoreDb.collection("system").doc("metadata").get()
+      db.select().from(businesses),
+      db.select().from(customers),
+      db.select().from(customerBusinessRelations),
+      db.select().from(paymentTransactions),
+      db.select().from(notifications),
+      db.select().from(auditLogs),
+      db.select().from(systemMetadata)
     ]);
 
-    const businesses: Business[] = [];
-    businessesSnap.forEach(doc => businesses.push(doc.data() as Business));
-
-    const customers: Customer[] = [];
-    customersSnap.forEach(doc => customers.push(doc.data() as Customer));
-
-    const customer_business_relations: CustomerBusinessRelation[] = [];
-    relationsSnap.forEach(doc => customer_business_relations.push(doc.data() as CustomerBusinessRelation));
-
-    const payment_transactions: PaymentTransaction[] = [];
-    transactionsSnap.forEach(doc => payment_transactions.push(doc.data() as PaymentTransaction));
-
-    const notifications: NotificationMsg[] = [];
-    notificationsSnap.forEach(doc => notifications.push(doc.data() as NotificationMsg));
-
-    const audit_logs: AuditLog[] = [];
-    auditLogsSnap.forEach(doc => audit_logs.push(doc.data() as AuditLog));
+    const dbObj: AppDatabase = {
+      businesses: bRes.map(b => ({
+        ...b,
+        loyaltyMode: b.loyaltyMode as any,
+        status: b.status as any,
+        planId: b.planId as any,
+        subscriptionStatus: b.subscriptionStatus as any,
+        paymentGateway: b.paymentGateway as any,
+        pointsOffers: (b.pointsOffers as any) || []
+      }) as Business),
+      customers: cRes.map(c => ({
+        ...c,
+        preferredLanguage: c.preferredLanguage || undefined
+      })),
+      customer_business_relations: rRes.map(r => ({
+        ...r,
+        lastStampAt: r.lastStampAt || null,
+        claimedCoupons: (r.claimedCoupons as any) || []
+      }) as CustomerBusinessRelation),
+      subscription_plans: initialPlans,
+      payment_transactions: txRes as any[],
+      notifications: nRes.map(n => ({
+        ...n,
+        customerId: n.customerId || undefined,
+        isForMerchant: n.isForMerchant || undefined
+      }) as any),
+      audit_logs: logRes as any[],
+      enabledLanguages: metaRes[0]?.enabledLanguages as string[] || initialDatabase.enabledLanguages,
+      globalExchangeRates: metaRes[0]?.globalExchangeRates as any || initialDatabase.globalExchangeRates
+    };
 
     // Sort collections by date
-    payment_transactions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    notifications.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
-    audit_logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-    const metadata = metadataDoc.data();
-    const enabledLanguages = metadata?.enabledLanguages || initialDatabase.enabledLanguages;
-    const globalExchangeRates = metadata?.globalExchangeRates || initialDatabase.globalExchangeRates;
-
-    const dbObj = {
-      businesses,
-      customers,
-      customer_business_relations,
-      subscription_plans: initialPlans,
-      payment_transactions,
-      notifications,
-      audit_logs,
-      enabledLanguages,
-      globalExchangeRates
-    };
+    dbObj.payment_transactions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    dbObj.notifications.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+    dbObj.audit_logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     saveLocalDB(dbObj);
     return dbObj;
   } catch (error: any) {
-    console.log("[Database] Loaded local dataset state.");
+    console.error("[PostgreSQL] Loaded local dataset state due to error:", error);
     return getLocalDB();
   }
 }
 
-// Helper: Save full structural delta of app ledger to Cloud Firestore
-async function saveDBToFirestore(db: AppDatabase) {
-  saveLocalDB(db);
+// Helper: Save full structural delta of app ledger to Cloud SQL PostgreSQL
+async function saveDBToFirestore(dbObj: AppDatabase) {
+  saveLocalDB(dbObj);
 
-  if (!useFirestore || !firestoreDb) return;
+  if (!process.env.SQL_HOST) return;
 
   try {
     // Save businesses
-    const businessesBatch = firestoreDb.batch();
-    db.businesses.forEach(b => {
-      businessesBatch.set(firestoreDb.collection("businesses").doc(b.id), b);
-    });
-    await businessesBatch.commit();
+    if (dbObj.businesses.length > 0) {
+      for (const b of dbObj.businesses) {
+        await db.insert(businesses)
+          .values({
+            id: b.id,
+            name: b.name,
+            password: b.password || null,
+            logoUrl: b.logoUrl,
+            country: b.country,
+            city: b.city,
+            operatingCurrency: b.operatingCurrency,
+            loyaltyMode: b.loyaltyMode,
+            stampRewardLimit: b.stampRewardLimit,
+            pointRewardLimit: b.pointRewardLimit,
+            rewardDescription: b.rewardDescription,
+            status: b.status,
+            languagePreference: b.languagePreference,
+            billingCurrency: b.billingCurrency,
+            paymentGateway: b.paymentGateway,
+            createdAt: b.createdAt,
+            trialEndsAt: b.trialEndsAt,
+            planId: b.planId,
+            subscriptionStatus: b.subscriptionStatus,
+            nextBillingAt: b.nextBillingAt,
+            overrideQuota: b.overrideQuota,
+            extraQuota: b.extraQuota,
+            notificationsSentThisMonth: b.notificationsSentThisMonth,
+            pointsRate: b.pointsRate,
+            paymentRetries: b.paymentRetries,
+            pointsOffers: b.pointsOffers || []
+          })
+          .onConflictDoUpdate({
+            target: businesses.id,
+            set: {
+              name: b.name,
+              password: b.password || null,
+              logoUrl: b.logoUrl,
+              country: b.country,
+              city: b.city,
+              operatingCurrency: b.operatingCurrency,
+              loyaltyMode: b.loyaltyMode,
+              stampRewardLimit: b.stampRewardLimit,
+              pointRewardLimit: b.pointRewardLimit,
+              rewardDescription: b.rewardDescription,
+              status: b.status,
+              languagePreference: b.languagePreference,
+              billingCurrency: b.billingCurrency,
+              paymentGateway: b.paymentGateway,
+              createdAt: b.createdAt,
+              trialEndsAt: b.trialEndsAt,
+              planId: b.planId,
+              subscriptionStatus: b.subscriptionStatus,
+              nextBillingAt: b.nextBillingAt,
+              overrideQuota: b.overrideQuota,
+              extraQuota: b.extraQuota,
+              notificationsSentThisMonth: b.notificationsSentThisMonth,
+              pointsRate: b.pointsRate,
+              paymentRetries: b.paymentRetries,
+              pointsOffers: b.pointsOffers || []
+            }
+          });
+      }
+    }
 
     // Save customers
-    const customersBatch = firestoreDb.batch();
-    db.customers.forEach(c => {
-      customersBatch.set(firestoreDb.collection("customers").doc(c.id), c);
-    });
-    await customersBatch.commit();
+    if (dbObj.customers.length > 0) {
+      for (const c of dbObj.customers) {
+        await db.insert(customers)
+          .values({
+            id: c.id,
+            name: c.name,
+            email: c.email,
+            phone: c.phone,
+            joinedAt: c.joinedAt,
+            preferredLanguage: c.preferredLanguage || null
+          })
+          .onConflictDoUpdate({
+            target: customers.id,
+            set: {
+              name: c.name,
+              email: c.email,
+              phone: c.phone,
+              joinedAt: c.joinedAt,
+              preferredLanguage: c.preferredLanguage || null
+            }
+          });
+      }
+    }
 
-    // Save relations
-    const relationsBatch = firestoreDb.batch();
-    db.customer_business_relations.forEach(r => {
-      relationsBatch.set(firestoreDb.collection("customer_business_relations").doc(r.id), r);
-    });
-    await relationsBatch.commit();
+    // Save customer business relations
+    if (dbObj.customer_business_relations.length > 0) {
+      for (const r of dbObj.customer_business_relations) {
+        await db.insert(customerBusinessRelations)
+          .values({
+            id: r.id,
+            customerId: r.customerId,
+            businessId: r.businessId,
+            stampsCount: r.stampsCount,
+            pointsCount: r.pointsCount,
+            lastStampAt: r.lastStampAt || null,
+            lastVisitAt: r.lastVisitAt,
+            optInNotifications: r.optInNotifications,
+            claimedCoupons: r.claimedCoupons || []
+          })
+          .onConflictDoUpdate({
+            target: customerBusinessRelations.id,
+            set: {
+              customerId: r.customerId,
+              businessId: r.businessId,
+              stampsCount: r.stampsCount,
+              pointsCount: r.pointsCount,
+              lastStampAt: r.lastStampAt || null,
+              lastVisitAt: r.lastVisitAt,
+              optInNotifications: r.optInNotifications,
+              claimedCoupons: r.claimedCoupons || []
+            }
+          });
+      }
+    }
 
-    // Save transactions
-    const transactionsBatch = firestoreDb.batch();
-    db.payment_transactions.forEach(tx => {
-      transactionsBatch.set(firestoreDb.collection("payment_transactions").doc(tx.id), tx);
-    });
-    await transactionsBatch.commit();
+    // Save payment transactions
+    if (dbObj.payment_transactions.length > 0) {
+      for (const tx of dbObj.payment_transactions) {
+        await db.insert(paymentTransactions)
+          .values({
+            id: tx.id,
+            businessId: tx.businessId,
+            amount: tx.amount,
+            currency: tx.currency,
+            status: tx.status,
+            gatewayTxnId: tx.gatewayTxnId,
+            invoiceUrl: tx.invoiceUrl,
+            createdAt: tx.createdAt
+          })
+          .onConflictDoUpdate({
+            target: paymentTransactions.id,
+            set: {
+              businessId: tx.businessId,
+              amount: tx.amount,
+              currency: tx.currency,
+              status: tx.status,
+              gatewayTxnId: tx.gatewayTxnId,
+              invoiceUrl: tx.invoiceUrl,
+              createdAt: tx.createdAt
+            }
+          });
+      }
+    }
 
     // Save notifications
-    const notificationsBatch = firestoreDb.batch();
-    db.notifications.forEach(n => {
-      notificationsBatch.set(firestoreDb.collection("notifications").doc(n.id), n);
-    });
-    await notificationsBatch.commit();
+    if (dbObj.notifications.length > 0) {
+      for (const n of dbObj.notifications) {
+        await db.insert(notifications)
+          .values({
+            id: n.id,
+            businessId: n.businessId,
+            customerId: n.customerId || null,
+            title: n.title,
+            message: n.message,
+            sentAt: n.sentAt,
+            reachedCount: n.reachedCount,
+            isForMerchant: n.isForMerchant || false
+          })
+          .onConflictDoUpdate({
+            target: notifications.id,
+            set: {
+              businessId: n.businessId,
+              customerId: n.customerId || null,
+              title: n.title,
+              message: n.message,
+              sentAt: n.sentAt,
+              reachedCount: n.reachedCount,
+              isForMerchant: n.isForMerchant || false
+            }
+          });
+      }
+    }
 
     // Save audit logs
-    const logsBatch = firestoreDb.batch();
-    db.audit_logs.forEach(log => {
-      logsBatch.set(firestoreDb.collection("audit_logs").doc(log.id), log);
-    });
-    await logsBatch.commit();
+    if (dbObj.audit_logs.length > 0) {
+      for (const log of dbObj.audit_logs) {
+        await db.insert(auditLogs)
+          .values({
+            id: log.id,
+            actor: log.actor,
+            action: log.action,
+            timestamp: log.timestamp
+          })
+          .onConflictDoUpdate({
+            target: auditLogs.id,
+            set: {
+              actor: log.actor,
+              action: log.action,
+              timestamp: log.timestamp
+            }
+          });
+      }
+    }
 
     // Save metadata
-    await firestoreDb.collection("system").doc("metadata").set({
-      enabledLanguages: db.enabledLanguages,
-      globalExchangeRates: db.globalExchangeRates
-    });
+    await db.insert(systemMetadata)
+      .values({
+        id: 1,
+        enabledLanguages: dbObj.enabledLanguages,
+        globalExchangeRates: dbObj.globalExchangeRates
+      })
+      .onConflictDoUpdate({
+        target: systemMetadata.id,
+        set: {
+          enabledLanguages: dbObj.enabledLanguages,
+          globalExchangeRates: dbObj.globalExchangeRates
+        }
+      });
   } catch (error: any) {
-    // Graceful offline fallback
-    // Save is already committed locally before this try block via saveLocalDB(db)
+    console.error("[PostgreSQL] Error saving database:", error);
   }
 }
 
-// Helper: Clear and reseed Firestore database
+// Helper: Clear and reseed Cloud SQL database
 async function resetFirestoreDB() {
   const dbToSeed = {
     ...initialDatabase,
@@ -675,20 +803,26 @@ async function resetFirestoreDB() {
 
   saveLocalDB(dbToSeed);
 
+  if (!process.env.SQL_HOST) {
+    console.log("[Database] Local state reset completed.");
+    return;
+  }
+
   try {
     await Promise.all([
-      clearCollection("businesses"),
-      clearCollection("customers"),
-      clearCollection("customer_business_relations"),
-      clearCollection("payment_transactions"),
-      clearCollection("notifications"),
-      clearCollection("audit_logs")
+      db.delete(businesses),
+      db.delete(customers),
+      db.delete(customerBusinessRelations),
+      db.delete(paymentTransactions),
+      db.delete(notifications),
+      db.delete(auditLogs),
+      db.delete(systemMetadata)
     ]);
 
     await saveDBToFirestore(dbToSeed);
+    console.log("[PostgreSQL] Cloud DB reset successfully completed.");
   } catch (error: any) {
-    // Graceful offline fallback
-    console.log("[Database] Local state reset completed.");
+    console.error("[PostgreSQL] Error resetting database:", error);
   }
 }
 
@@ -763,6 +897,20 @@ app.get("/api/db/download", async (req, res) => {
   } catch (err: any) {
     console.error("Download db failed:", err);
     res.status(500).json({ error: "Failed to compile offline JSON export." });
+  }
+});
+
+app.get("/api/bun-lock/download", async (req, res) => {
+  try {
+    const bunLockPath = path.join(process.cwd(), "bun.lock");
+    if (fs.existsSync(bunLockPath)) {
+      res.download(bunLockPath, "bun.lock");
+    } else {
+      res.status(404).json({ error: "bun.lock file not found on server." });
+    }
+  } catch (err: any) {
+    console.error("Download bun.lock failed:", err);
+    res.status(500).json({ error: "Failed to download bun.lock file." });
   }
 });
 

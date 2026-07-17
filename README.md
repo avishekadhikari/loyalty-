@@ -1,16 +1,19 @@
 # Remix: Loyalty Nepal and Worldwide 🇳🇵🌍
 
-A high-performance B2B2C loyalty and reward platform supporting merchants in Nepal and globally. Seamlessly bridges local businesses with their customers via unified digital dashboards, fast QR scan checkouts, and dynamic rewards tracking.
+A high-performance B2B2C loyalty and reward platform supporting local merchants in Nepal and globally. Seamlessly bridges businesses with their customers via unified digital dashboards, fast QR scan checkouts, and dynamic multi-currency rewards tracking.
+
+Now backed by a high-availability, fully managed **Google Cloud SQL (PostgreSQL)** database integrated via **Drizzle ORM** for enterprise-grade performance and transactional safety.
 
 ---
 
 ## ✨ Features
 
-- **📱 Customer Digital Wallet**: Real-time points tracking, digital loyalty stamp cards, transaction history, and QR-code self-enrollment.
-- **💼 Business Dashboard**: Custom loyalty rules, tier configurations, direct client messaging, real-time analytics, and customer segment graphs.
-- **🔒 Secure Admin Portal**: Ledger auditing, system health stats, rate-limit controllers, and global platform security gates.
-- **🌀 Smooth Interactions**: High-fidelity interface styled with Tailwind CSS, custom frosted-glass elements, responsive layouts, and motion-animated micro-interactions.
-- **⚡ Full-Stack Real-Time Synced Core**: Express server proxy with type-safe state tracking, QR nonce authentication, and Gemini AI readiness.
+- **📱 Customer Digital Wallet**: Real-time points tracking, digital loyalty stamp cards, transactions history, and QR-code self-enrollment.
+- **💼 Business Dashboard**: Custom loyalty rules, point multiplier configurations, tier definitions, direct client messaging, real-time analytics, and visual customer segment graphs.
+- **🔒 Secure Admin Portal**: Platform-wide ledger auditing, system health stats, exchange rate updates, and allowed language controllers.
+- **🗺️ Global & Multi-Currency Ready**: Native support for exchange rates (NPR, USD, INR, etc.) and multilingual localization toggles (English, Nepali, Hindi).
+- **🌀 Smooth Interactions**: High-fidelity interface styled with Tailwind CSS, custom frosted-glass elements, responsive layouts, and fluid motion-animated micro-interactions.
+- **⚡ Full-Stack Sync Engine**: Robust Express server proxy with type-safe Cloud SQL state updates, automatic local JSON backups, and seamless seeding.
 
 ---
 
@@ -20,7 +23,36 @@ A high-performance B2B2C loyalty and reward platform supporting merchants in Nep
 - **Animations**: [Motion](https://motion.dev/)
 - **Icons**: [Lucide React](https://lucide.dev/)
 - **Backend**: Node.js, [Express](https://expressjs.com/), [tsx](https://github.com/privatenumber/tsx)
-- **Compilation & Bundling**: [esbuild](https://esbuild.github.io/)
+- **Database**: [Google Cloud SQL (PostgreSQL)](https://cloud.google.com/sql)
+- **ORM & Migrations**: [Drizzle ORM](https://orm.drizzle.team/), [Drizzle Kit](https://orm.drizzle.team/kit-docs/overview)
+
+---
+
+## 📐 Project Structure
+
+```text
+├── assets/                  # Public assets and media
+├── backend/                 # Full-stack backend server
+│   ├── db/
+│   │   ├── index.ts         # Cloud SQL connection pool configuration
+│   │   └── schema.ts        # Database schema definitions
+│   └── index.ts             # Express server and API routes
+├── frontend/                # Modern SPA React application
+│   ├── components/          # Dashboard panels (Admin, Merchant, Customer, Marketing)
+│   ├── App.tsx              # Main application router and shell
+│   ├── index.css            # Tailwind CSS global styles and design variables
+│   ├── main.tsx             # React SPA entry mount point
+│   ├── translations.ts      # Multi-language dictionary rules
+│   └── types.ts             # Shared frontend type interfaces
+├── src/                     # Infrastructure configuration folder
+│   └── db/
+│       ├── drizzle.config.ts# Drizzle Kit CLI configuration
+│       └── schema.ts        # Main schema source of truth for cloud syncs
+├── db.json                  # Local JSON dataset backup (automatic graceful fallback)
+├── metadata.json            # AI Studio applet manifest
+├── package.json             # NPM dependencies, building, and runner scripts
+└── tsconfig.json            # TypeScript engine rules
+```
 
 ---
 
@@ -32,10 +64,9 @@ Make sure you have [Node.js](https://nodejs.org/) (v18 or higher) installed.
 
 ### 2. Installation
 
-Clone this repository and install the dependencies:
+Clone this repository and install all required frontend and backend dependencies:
 
 ```bash
-# Install dependencies
 npm install
 ```
 
@@ -47,54 +78,56 @@ Create a `.env` file in the root directory based on `.env.example`:
 cp .env.example .env
 ```
 
-Define your secrets inside `.env`:
+Define your database credentials and API secrets:
+
 ```env
+# Google Cloud SQL Credentials
+SQL_HOST="127.0.0.1"
+SQL_DB_NAME="your_db_name"
+SQL_USER="your_db_user"
+SQL_PASSWORD="your_db_password"
+
+# Optional Cloud SQL Admin Settings
+SQL_ADMIN_USER="ai_studio_admin"
+SQL_ADMIN_PASSWORD="your_admin_password"
+
+# Miscellaneous API Configurations
 GEMINI_API_KEY="your_gemini_key_here"
-APP_URL="your_app_url_here"
 ```
 
-### 4. Run Development Server
+### 4. Database Migrations
 
-Start the full-stack development environment:
+Deploy database schemas to Cloud SQL with Drizzle:
+
+```bash
+# Push schema updates safely
+npx drizzle-kit push
+```
+
+### 5. Running the Application
+
+To start the full-stack development environment:
 
 ```bash
 npm run dev
 ```
 
-The application will be running at [http://localhost:3000](http://localhost:3000).
+The application will run at [http://localhost:3000](http://localhost:3000).
 
-### 5. Production Build
+---
 
-To bundle the client-side SPA assets and compile the TypeScript Express server for production:
+## 🏗️ Production Compilation
+
+To compile both the React client assets and bundle the Express server for highly performant container deployments:
 
 ```bash
+# Build React client and bundle Node server
 npm run build
-```
 
-The production output is built into the `dist/` folder. Start the compiled production app via:
-
-```bash
+# Start the compiled production server
 npm run start
 ```
 
 ---
 
-## 📐 Project Structure
-
-```text
-├── assets/             # Assets and media
-├── src/
-│   ├── components/     # Customer, Business, and Admin panels
-│   ├── types.ts        # Common type definitions
-│   ├── index.css       # Tailwind configuration and frosted glass utilities
-│   ├── main.tsx        # React mounting entry point
-│   └── App.tsx         # Main application controller
-├── server.ts           # Full-stack Express server
-├── metadata.json       # Applet permissions and settings
-├── package.json        # Project dependencies and build tasks
-└── tsconfig.json       # TypeScript compiler settings
-```
-
----
-
-*This project was initiated in Google AI Studio.*
+*This project was developed and deployed in Google AI Studio.*
